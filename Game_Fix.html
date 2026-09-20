@@ -810,13 +810,13 @@ canvas{display:block}
    MULTIPLAYER LOBBY
    ================================================== */
 .mp-tabs{display:flex;gap:6px;margin-bottom:18px}
-.mp-tab{font-family:var(--mono);font-size:11px;letter-spacing:.08em;font-weight:600;
-  padding:8px 14px;background:var(--paper);border:1px solid var(--rule);color:var(--ink-2);
-  cursor:pointer;transition:all .12s}
-.mp-tab:hover{color:var(--ink);border-color:var(--ink)}
-.mp-tab.on{background:var(--ink);color:var(--paper-hi);border-color:var(--ink)}
-.mp-panel{display:none}
-.mp-panel.on{display:block}
+.mp-tab{font-family:var(--mono);font-size:12px;letter-spacing:.12em;font-weight:700;
+  padding:10px 16px;background:var(--paper);border:1.5px solid var(--rule);color:var(--ink-2);
+  cursor:pointer;transition:all .15s;box-shadow:1px 1px 0 var(--rule-soft)}
+.mp-tab:hover{color:var(--ink);border-color:var(--ink);transform:translate(-1px,-1px);box-shadow:2px 2px 0 var(--ink)}
+.mp-tab.on{background:var(--ink);color:var(--paper-hi);border-color:var(--ink);font-weight:800;box-shadow:3px 3px 0 var(--ink);transform:translate(-1px,-1px)}
+.mp-panel{display:none;border:1px solid transparent;padding:2px}
+.mp-panel.on{display:block;border-color:var(--rule-soft);background:var(--paper-hi);padding:14px 12px;box-shadow:inset 0 0 0 1px var(--paper)}
 .mp-field{margin-bottom:13px;display:flex;flex-direction:column;gap:5px}
 .mp-field label{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
   color:var(--rule);text-transform:uppercase}
@@ -824,6 +824,8 @@ canvas{display:block}
   border:1.5px solid var(--rule);background:var(--paper-hi);color:var(--ink);outline:none;
   transition:border-color .12s}
 .mp-field input:focus,.mp-field select:focus{border-color:var(--safety)}
+.mp-field input::placeholder{font-weight:700;color:var(--ink);opacity:.85;letter-spacing:.02em}
+.mp-field input#mpCreateName::placeholder,.mp-field input#mpJoinName::placeholder{font-weight:700;font-style:normal;color:var(--ink);}
 .mp-field input#mpJoinCode{text-transform:uppercase;letter-spacing:.16em;
   font-family:var(--mono);font-weight:600}
 .mp-status{font-size:12px;min-height:16px;margin-bottom:10px;color:var(--alert);font-weight:600}
@@ -925,7 +927,7 @@ canvas{display:block}
     <div class="mp-panel" data-mppanel="create">
       <div class="mp-field">
         <label for="mpCreateName">Nama kamu</label>
-        <input type="text" id="mpCreateName" maxlength="16" placeholder="mis. Arina">
+        <input type="text" id="mpCreateName" maxlength="16" placeholder="mis. Arina/Rafi">
       </div>
       <div class="mp-field">
         <label for="mpCreateMax">Maksimal pemain di room</label>
@@ -945,7 +947,7 @@ canvas{display:block}
     <div class="mp-panel" data-mppanel="join">
       <div class="mp-field">
         <label for="mpJoinName">Nama kamu</label>
-        <input type="text" id="mpJoinName" maxlength="16" placeholder="mis. Rafi">
+        <input type="text" id="mpJoinName" maxlength="16" placeholder="mis. Arina/Rafi">
       </div>
       <div class="mp-field">
         <label for="mpJoinCode">Kode room dari host</label>
