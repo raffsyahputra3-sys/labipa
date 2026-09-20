@@ -925,7 +925,7 @@ canvas{display:block}
     <div class="mp-panel" data-mppanel="create">
       <div class="mp-field">
         <label for="mpCreateName">Nama kamu</label>
-        <input type="text" id="mpCreateName" maxlength="16" placeholder="mis. Alya">
+        <input type="text" id="mpCreateName" maxlength="16" placeholder="mis. Arina">
       </div>
       <div class="mp-field">
         <label for="mpCreateMax">Maksimal pemain di room</label>
@@ -945,7 +945,7 @@ canvas{display:block}
     <div class="mp-panel" data-mppanel="join">
       <div class="mp-field">
         <label for="mpJoinName">Nama kamu</label>
-        <input type="text" id="mpJoinName" maxlength="16" placeholder="mis. Budi">
+        <input type="text" id="mpJoinName" maxlength="16" placeholder="mis. Rafi">
       </div>
       <div class="mp-field">
         <label for="mpJoinCode">Kode room dari host</label>
@@ -1373,10 +1373,11 @@ function addFloor(w,d,x,z,color){
 addFloor(rP.w,rP.d,rP.x,rP.z,C.floor);
 addFloor(rPrep.w,rPrep.d,rPrep.x,rPrep.z,C.floor);
 addFloor(rStor.w,rStor.d,rStor.x,rStor.z,C.floor);
+const ceilings=[];
 function addCeil(w,d,x,z){
   const c=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),
-    new THREE.MeshStandardMaterial({color:C.ceil,roughness:0.95}));
-  c.position.set(x,H,z);scene.add(c);
+    new THREE.MeshStandardMaterial({color:C.ceil,roughness:0.95,transparent:true}));
+  c.position.set(x,H,z);scene.add(c);ceilings.push(c);
 }
 addCeil(rP.w,rP.d,rP.x,rP.z);
 addCeil(rPrep.w,rPrep.d,rPrep.x,rPrep.z);
@@ -1506,6 +1507,55 @@ createDoor(-2.6,BZ,1.2,2.2,0,+95,false,'Pintu Darurat Belakang');
 createDoor(-0.25,FZ,1.5,2.2,Math.PI,+95,true,'Pintu Utama');
 createDoor(LX,-2.5,1,2,-Math.PI/2,-95,false,'Pintu Ruang Persiapan');
 createDoor(LX,1.5,1,2,-Math.PI/2,-95,false,'Pintu Ruang Penyimpanan');
+
+// ---------- Helper pintu ----------
+function getNearestDoor(maxDist){
+  let best=null,bd=Infinity;
+  for(let i=0;i<doors.length;i++){
+    const d=doors[i];
+    const dx=player.pos.x-d.x, dz=player.pos.z-d.z;
+    const dist=Math.sqrt(dx*dx+dz*dz);
+    if(dist<bd && dist<=maxDist){ best=d; bd=dist; }
+  }
+  return best;
+}
+function tryToggleDoorAtScreen(px,py){
+  const rect=cvs.getBoundingClientRect();
+  const nx=((px-rect.left)/rect.width)*2-1;
+  const ny=-((py-rect.top)/rect.height)*2+1;
+  const rc=new THREE.Raycaster();
+  const cam=(camMode==='top')?orthoCam:camera;
+  rc.setFromCamera(new THREE.Vector2(nx,ny),cam);
+  const doorMeshes=[];
+  for(let i=0;i<doors.length;i++) doors[i].pivot.traverse(function(o){ if(o.isMesh) doorMeshes.push(o); });
+  const hits=rc.intersectObjects(doorMeshes,false);
+  if(!hits.length) return false;
+  const hit=hits[0].object;
+  for(let i=0;i<doors.length;i++){
+    let p=hit; while(p){ if(p===doors[i].pivot){ doors[i].isOpen=!doors[i].isOpen; showToast((doors[i].isOpen?'Membuka ':'Menutup ')+doors[i].label); return true; } p=p.parent; }
+    let found=false; doors[i].pivot.traverse(function(o){ if(o===hit) found=true; });
+    if(found){ doors[i].isOpen=!doors[i].isOpen; showToast((doors[i].isOpen?'Membuka ':'Menutup ')+doors[i].label); return true; }
+  }
+  return false;
+}
+function toggleDoorCrosshair(){
+  const rc=new THREE.Raycaster();
+  rc.setFromCamera(new THREE.Vector2(0,0),camera);
+  const doorMeshes=[];
+  for(let i=0;i<doors.length;i++) doors[i].pivot.traverse(function(o){ if(o.isMesh) doorMeshes.push(o); });
+  const hits=rc.intersectObjects(doorMeshes,false);
+  if(hits.length){
+    const hit=hits[0].object;
+    for(let i=0;i<doors.length;i++){
+      let p=hit; while(p){ if(p===doors[i].pivot){ doors[i].isOpen=!doors[i].isOpen; showToast((doors[i].isOpen?'Membuka ':'Menutup ')+doors[i].label); return true; } p=p.parent; }
+      let found=false; doors[i].pivot.traverse(function(o){ if(o===hit) found=true; });
+      if(found){ doors[i].isOpen=!doors[i].isOpen; showToast((doors[i].isOpen?'Membuka ':'Menutup ')+doors[i].label); return true; }
+    }
+  }
+  const nd=getNearestDoor(2.2);
+  if(nd){ nd.isOpen=!nd.isOpen; showToast((nd.isOpen?'Membuka ':'Menutup ')+nd.label); return true; }
+  return false;
+}
 
 // ============== MOUNT CONFIG ==============
 const ITEM_MOUNT={
@@ -1895,6 +1945,8 @@ function setCamMode(m){
   const wrap=document.getElementById('viewWrap');
   wrap.classList.toggle('crosshair-mode',m==='fps');
   if(crosshairEl)crosshairEl.classList.toggle('on',m==='fps'&&isLocked);
+  // Atap transparan di mode Top
+  if(typeof ceilings!=='undefined') ceilings.forEach(function(c){ c.material.opacity=(m==='top')?0.12:1; c.visible=true; });
   if(m==='fps'){
     if(!isLocked&&!inventoryOpen&&!panelOpen&&!stdEl.classList.contains('on')){
       try{cvs.requestPointerLock();}catch(_){}
@@ -1936,6 +1988,7 @@ window.addEventListener('mouseup',function(e){
   document.getElementById('viewWrap').classList.remove('grabbing');
   const move=Math.abs(e.clientX-dragStartX)+Math.abs(e.clientY-dragStartY);
   if(move<4&&camMode!=='fps'){
+    if(tryToggleDoorAtScreen(e.clientX,e.clientY)) return;
     trySelectAtScreen(e.clientX,e.clientY);
   }
 });
@@ -2610,7 +2663,10 @@ document.addEventListener('mousemove',function(e){
 });
 cvs.addEventListener('mousedown',function(e){
   if(camMode!=='fps'||!isLocked)return;
-  if(e.button===0&&PLACEMENT.active)confirmPlacement();
+  if(e.button===0&&PLACEMENT.active){confirmPlacement(); return;}
+  if(e.button===0&&!PLACEMENT.active){
+    if(toggleDoorCrosshair()) return;
+  }
 });
 
 // =============================================================
@@ -2653,6 +2709,12 @@ document.addEventListener('keydown',function(e){
   }
   if(e.code==='KeyQ'&&PLACEMENT.active){rotatePlacement(Math.PI/12);e.preventDefault();}
   if(e.code==='KeyE'&&PLACEMENT.active){rotatePlacement(-Math.PI/12);e.preventDefault();}
+  if(e.code==='KeyE'&&!PLACEMENT.active){
+    if(toggleDoorCrosshair()){e.preventDefault();return;}
+  }
+  if(e.code==='KeyF'&&!PLACEMENT.active){
+    if(toggleDoorCrosshair()){e.preventDefault();return;}
+  }
   if(e.code==='BracketLeft'&&PLACEMENT.active){rotatePlacement(-Math.PI/12);e.preventDefault();}
   if(e.code==='BracketRight'&&PLACEMENT.active){rotatePlacement(Math.PI/12);e.preventDefault();}
   if(e.code==='KeyX'){
