@@ -1,0 +1,16 @@
+{
+  "name": "labipa-multiplayer",
+  "version": "1.0.0",
+  "description": "LabIPA 3D Studio · Socket.IO multiplayer + voice chat",
+  "main": "server.js",
+  "engines": {
+    "node": "18.x"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
