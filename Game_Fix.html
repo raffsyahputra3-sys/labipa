@@ -2561,10 +2561,33 @@ function mpMakeNameSprite(text,colorHex){
 }
 function mpCreateAvatar(colorHex,name){
   const group=new THREE.Group();
-  const torso=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.55,0.22),simpleBoxMat(new THREE.Color(colorHex).getHex(),0.65));
+  const torsoMat=simpleBoxMat(new THREE.Color(colorHex).getHex(),0.65);
+  const skinMat=simpleBoxMat(0xE8C8A8,0.8);
+  const legMat=simpleBoxMat(0x2A3A4A,0.75);
+  const torso=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.55,0.22),torsoMat);
   torso.position.y=0.85;torso.castShadow=true;group.add(torso);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(0.14,16,12),simpleBoxMat(0xE8C8A8,0.8));
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.14,16,12),skinMat);
   head.position.y=1.28;head.castShadow=true;group.add(head);
+  const armGeo=new THREE.BoxGeometry(0.08,0.42,0.08);
+  const leftArm=new THREE.Mesh(armGeo,torsoMat);
+  leftArm.position.set(-0.26,0.82,0); leftArm.castShadow=true; group.add(leftArm);
+  const rightArm=new THREE.Mesh(armGeo,torsoMat);
+  rightArm.position.set(0.26,0.82,0); rightArm.castShadow=true; group.add(rightArm);
+  const handGeo=new THREE.SphereGeometry(0.05,10,8);
+  const leftHand=new THREE.Mesh(handGeo,skinMat);
+  leftHand.position.set(-0.26,0.56,0); leftHand.castShadow=true; group.add(leftHand);
+  const rightHand=new THREE.Mesh(handGeo,skinMat);
+  rightHand.position.set(0.26,0.56,0); rightHand.castShadow=true; group.add(rightHand);
+  const legGeo=new THREE.BoxGeometry(0.11,0.52,0.11);
+  const leftLeg=new THREE.Mesh(legGeo,legMat);
+  leftLeg.position.set(-0.11,0.28,0); leftLeg.castShadow=true; group.add(leftLeg);
+  const rightLeg=new THREE.Mesh(legGeo,legMat);
+  rightLeg.position.set(0.11,0.28,0); rightLeg.castShadow=true; group.add(rightLeg);
+  const footGeo=new THREE.BoxGeometry(0.13,0.06,0.18);
+  const leftFoot=new THREE.Mesh(footGeo,legMat);
+  leftFoot.position.set(-0.11,0.03,0.04); leftFoot.castShadow=true; group.add(leftFoot);
+  const rightFoot=new THREE.Mesh(footGeo,legMat);
+  rightFoot.position.set(0.11,0.03,0.04); rightFoot.castShadow=true; group.add(rightFoot);
   const label=mpMakeNameSprite(name,colorHex);
   label.position.y=1.64;group.add(label);
   scene.add(group);
