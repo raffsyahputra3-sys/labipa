@@ -1029,6 +1029,9 @@ canvas{display:block}
   <button class="tb-btn icon-only" id="btnReset" title="Reset ruangan (R)">
     <span class="ico">🗑</span>
   </button>
+  <button class="tb-btn icon-only" id="btnDownload" title="Download HTML layout (D)">
+    <span class="ico">📄</span>
+  </button>
 
   <div class="sep"></div>
 
@@ -1156,6 +1159,14 @@ canvas{display:block}
           <button class="cat-item safety" data-item="eyewash"><span class="ico">🚿</span><span class="nm">Emergency</span><span class="mt">shower+eyewash</span></button>
         </div>
       </div>
+      <div class="catalog-group">
+        <div class="catalog-group-title">HVAC &amp; PENCAHAYAAN</div>
+        <div class="catalog-items">
+          <button class="cat-item furniture" data-item="ac"><span class="ico">❄️</span><span class="nm">AC Split</span><span class="mt">2 PK · dinding</span></button>
+          <button class="cat-item furniture" data-item="ventilasi"><span class="ico">🪟</span><span class="nm">Ventilasi Kaca</span><span class="mt">1.2 m · atas dinding</span></button>
+          <button class="cat-item furniture" data-item="lamp-ceiling"><span class="ico">💡</span><span class="nm">Lampu Plafon</span><span class="mt">600×600 · 36W</span></button>
+        </div>
+      </div>
     </section>
 
     <section class="section">
@@ -1167,6 +1178,10 @@ canvas{display:block}
         </div>
         <input type="range" class="slider" id="lampSlider" min="0" max="200" step="5" value="100">
         <div class="ticks"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>
+        <div style="margin-top:8px;padding:8px 10px;background:var(--paper);border-left:3px solid var(--safety);font-size:11px;color:var(--ink-2);line-height:1.4">
+          <b style="color:var(--ink)">Lux:</b> 100% = 300-350 lux (SNI) · 50% redup 150 lux · 200% terang 700 lux<br>
+          <b style="color:var(--ink)">AC:</b> 2 PK 22°C 18000 BTU · <b style="color:var(--ink)">Ventilasi:</b> kaca 1.2 m sirkulasi silang
+        </div>
         <div class="presets" role="group">
           <button data-v="50">50</button>
           <button data-v="100" aria-pressed="true">100</button>
@@ -1371,6 +1386,48 @@ function tree(x,z,k){
 .forEach(function(p,i){tree(p[0],p[1],i%3===0?'beringin':(i%3===1?'trembesi':'mahoni'));});
 
 const fenceMat=new THREE.MeshStandardMaterial({color:0x2A3844,metalness:0.4,roughness:0.6});
+// ============== LINGKUNGAN SEKOLAH ==============
+function addSchoolBuilding(x,z,w,d,h,color){
+  const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color:color,roughness:0.85}));
+  b.position.set(x,h/2,z); b.castShadow=true; b.receiveShadow=true; scene.add(b);
+  // Atap
+  const roof=new THREE.Mesh(new THREE.BoxGeometry(w+0.3,0.25,d+0.3),new THREE.MeshStandardMaterial({color:0x8B4513,roughness:0.9}));
+  roof.position.set(x,h+0.12,z); scene.add(roof);
+  // Jendela
+  for(let ix=-w/2+1.2; ix<w/2-0.8; ix+=2){
+    const win=new THREE.Mesh(new THREE.BoxGeometry(1.2,1.4,0.08),new THREE.MeshStandardMaterial({color:0xA8C7D4,transparent:true,opacity:0.45}));
+    win.position.set(x+ix,h/2,z+d/2+0.04); scene.add(win);
+  }
+  // Pintu sekolah
+  const door=new THREE.Mesh(new THREE.BoxGeometry(1.4,2.2,0.08),new THREE.MeshStandardMaterial({color:0x5D4037,roughness:0.8}));
+  door.position.set(x,h/2-0.3,z+d/2+0.04); scene.add(door);
+  // Label
+  const cnv=document.createElement('canvas'); cnv.width=512; cnv.height=128;
+  const ctx=cnv.getContext('2d'); ctx.fillStyle='#1B2A41'; ctx.fillRect(0,0,512,128);
+  ctx.fillStyle='#F5F0E0'; ctx.font='700 28px Inter'; ctx.textAlign='center'; ctx.fillText('GEDUNG SEKOLAH',256,75);
+  const tex=new THREE.CanvasTexture(cnv);
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex}));
+  spr.position.set(x,h+1.5,z+d/2+0.5); spr.scale.set(6,1.5,1); scene.add(spr);
+}
+// Gedung Sekolah Utama (utara lab)
+addSchoolBuilding(0,-14,28,10,6,0xEDE7D3);
+// Gedung Perpustakaan (timur)
+addSchoolBuilding(18,0,10,16,5,0xDCE5DD);
+// Gedung Kelas (barat)
+addSchoolBuilding(-18,2,12,14,5,0xF5F0E0);
+// Lapangan Upacara (selatan lab) - paving + tiang bendera
+const lapangan=new THREE.Mesh(new THREE.BoxGeometry(22,0.03,14),new THREE.MeshStandardMaterial({color:0xC9C0A5,roughness:0.9}));
+lapangan.position.set(2, -0.04, 12); lapangan.receiveShadow=true; scene.add(lapangan);
+const tiang=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,7,12),new THREE.MeshStandardMaterial({color:0x8A939B,metalness:0.7}));
+tiang.position.set(2,3.5,15); tiang.castShadow=true; scene.add(tiang);
+const bendera=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.9,0.02),new THREE.MeshStandardMaterial({color:0xC1272D,side:THREE.DoubleSide}));
+bendera.position.set(2.9,6.2,15); bendera.castShadow=true; scene.add(bendera);
+// Jalan akses
+const jalan=new THREE.Mesh(new THREE.BoxGeometry(4,0.02,28),new THREE.MeshStandardMaterial({color:0x4A4A4A,roughness:0.95}));
+jalan.position.set(-8, -0.03, 0); jalan.receiveShadow=true; scene.add(jalan);
+const garis=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.01,28),new THREE.MeshStandardMaterial({color:0xF5F0E0}));
+garis.position.set(-8, -0.01, 0); scene.add(garis);
+
 for(let i=-20;i<=20;i+=2){[18,-18].forEach(function(zz){
   const t=new THREE.Mesh(new THREE.BoxGeometry(0.08,2,0.08),fenceMat);
   t.position.set(i,1,zz);scene.add(t);});}
@@ -1589,7 +1646,7 @@ const ITEM_MOUNT={
   'table':'floor','chair':'floor','teacher-desk':'floor',
   'cabinet':'either','cabinet-glass':'either','sink-unit':'floor','board':'wall',
   'tube-rack':'floor','beaker-set':'floor','microscope':'floor',
-  'apar':'wall','p3k':'wall','blanket':'wall','spill':'floor','eyewash':'floor'
+  'apar':'wall','p3k':'wall','blanket':'wall','spill':'floor','eyewash':'floor','ac':'wall','ventilasi':'wall','lamp-ceiling':'wall'
 };
 // Nilai = tinggi DASAR benda (bottom) dari lantai, dalam meter.
 // Bukan lagi tinggi pusat. Ini sesuai dengan origin mesh yang ada di dasar objek.
@@ -1599,7 +1656,10 @@ const WALL_MOUNT={
   'p3k':1.10,        // kotak P3K, dasar 1.10 m
   'blanket':1.10,    // selimut api, dasar 1.10 m
   'cabinet':0.00,    // lemari duduk di lantai (dinding hanya pegangan)
-  'cabinet-glass':0.00
+  'cabinet-glass':0.00,
+  'ac':2.2,         // AC split, dasar 2.2 m (dekat plafon)
+  'ventilasi':2.6,  // ventilasi kaca, dasar 2.6 m (atas dinding)
+  'lamp-ceiling':2.9 // lampu plafon, dasar 2.9 m
 };
 const WALL_MAX_DIST=2.5;
 
@@ -1905,7 +1965,40 @@ const MAKERS={
     const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.18,0.14,24),gold);
     bowl.position.set(0.28,0.84,0);g.add(bowl);
     return g;
-  }}
+  },
+  'ac':{label:'AC Split 2 PK',type:'furniture',aabb:{w:0.9,h:0.3,d:0.25},make:function(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.3,0.25),simpleBoxMat(0xE8EEF5,0.4));
+    body.position.y=0.15;body.castShadow=true;g.add(body);
+    const grill=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.04,0.02),simpleBoxMat(0x2A3A4A,0.6));
+    grill.position.set(0,0.08,0.13);g.add(grill);
+    const led=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.02,0.01),simpleBoxMat(0x4FA0F5,0.3));
+    led.position.set(0.3,0.02,0.13);g.add(led);
+    return g;
+  }},
+  'ventilasi':{label:'Ventilasi Kaca',type:'furniture',aabb:{w:1.2,h:0.4,d:0.05},make:function(){
+    const g=new THREE.Group();
+    const frameMat=simpleBoxMat(0x5D4A34,0.7);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.03,0.05),frameMat); top.position.y=0.185; g.add(top);
+    const bot=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.03,0.05),frameMat); bot.position.y=-0.185; g.add(bot);
+    const left=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.4,0.05),frameMat); left.position.x=-0.585; g.add(left);
+    const right=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.4,0.05),frameMat); right.position.x=0.585; g.add(right);
+    const glass=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.34,0.02),new THREE.MeshStandardMaterial({color:0xA8C7D4,transparent:true,opacity:0.35,roughness:0.1}));
+    glass.position.set(-0.29,0,0); g.add(glass);
+    const glass2=glass.clone(); glass2.position.x=0.29; g.add(glass2);
+    const mid=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.34,0.02),frameMat); g.add(mid);
+    return g;
+  }},
+  'lamp-ceiling':{label:'Lampu Plafon LED',type:'furniture',aabb:{w:0.6,h:0.08,d:0.6},make:function(){
+    const g=new THREE.Group();
+    const base=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.02,0.6),simpleBoxMat(0xF5F0E0,0.5));
+    base.position.y=0.04; base.castShadow=true; g.add(base);
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.015,0.5),new THREE.MeshStandardMaterial({color:0xFFF8DC,emissive:0xFFF0A0,emissiveIntensity:0.6,roughness:0.4}));
+    panel.position.y=0.015; g.add(panel);
+    const frame=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.015,0.62),simpleBoxMat(0x8A939B,0.6));
+    frame.position.y=0.045; g.add(frame);
+    return g;
+  }}}
 };
 
 // =============================================================
@@ -3114,6 +3207,7 @@ document.addEventListener('keydown',function(e){
     PHYS.clearAll();selectedBody=null;renderInspector();updateStats();
     showToast('Ruangan direset kosong');
   }
+  if(e.code==='KeyD'&&!PLACEMENT.active){ downloadLayoutHTML(); e.preventDefault(); }
 });
 document.addEventListener('keyup',function(e){keys[e.code]=false;});
 
@@ -3154,6 +3248,7 @@ document.querySelectorAll('#snapBar button').forEach(function(btn){
 document.getElementById('btnKatalog').addEventListener('click',openInventory);
 document.getElementById('btnInfo').addEventListener('click',togglePanel);
 document.getElementById('btnSave').addEventListener('click',saveLayout);
+const dlBtn=document.getElementById('btnDownload'); if(dlBtn) dlBtn.addEventListener('click',downloadLayoutHTML);
 document.getElementById('btnLoad').addEventListener('click',loadLayout);
 document.getElementById('btnReset').addEventListener('click',function(){
   if(confirm('Reset seluruh ruangan?')){PHYS.clearAll();selectedBody=null;renderInspector();updateStats();}
@@ -3171,6 +3266,37 @@ function saveLayout(){
     localStorage.setItem(LS_KEY,JSON.stringify(data));
     showToast('Disimpan ('+data.items.length+' item)');
   }catch(e){showToast('Gagal simpan: '+e.message);}
+}
+function downloadLayoutHTML(){
+  try{
+    const items=PHYS.serialize();
+    const lux=document.getElementById('lampVal')?document.getElementById('lampVal').textContent:'100';
+    const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>LabIPA - Tata Ruang Final</title><style>
+      body{font-family:Inter,system-ui;padding:24px;background:#F5F0E0;color:#1B2A41}
+      h1{font-family:EB Garamond,serif;font-size:28px;margin-bottom:8px}
+      .meta{font-family:IBM Plex Mono,monospace;font-size:11px;color:#8B7355;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border:1px solid #1B2A41}
+      th,td{border:1px solid #B9A88A;padding:8px 10px;font-size:12px;text-align:left}
+      th{background:#1B2A41;color:#F5F0E0;font-family:IBM Plex Mono,monospace;font-size:11px;letter-spacing:.06em}
+      .lux{margin-top:14px;padding:10px 14px;background:#EDE7D3;border-left:3px solid #D97706;font-size:12px}
+      .lux b{color:#1B2A41}
+    </style></head><body>
+      <h1>LabIPA 3D Studio — Tata Ruang Final</h1>
+      <div class="meta">Diekspor ${new Date().toLocaleString('id-ID')} — ${items.length} item — Lux ${lux}% — Suhu AC 22°C — Ventilasi kaca aktif</div>
+      <table><tr><th>#</th><th>Item</th><th>Tipe</th><th>Posisi (X,Y,Z)</th><th>Rotasi</th><th>Tempel</th></tr>
+      ${items.map((it,i)=>`<tr><td>${i+1}</td><td>${it.itemKey}</td><td>${it.stuckSurface||'-'}</td><td>${it.pos.x.toFixed(2)}, ${it.pos.y.toFixed(2)}, ${it.pos.z.toFixed(2)}</td><td>${Math.round((it.rotY*180/Math.PI))}°</td><td>${it.stuck?it.stuckSurface:'-'}</td></tr>`).join('')}
+      </table>
+      <div class="lux"><b>Keterangan Lux:</b> 0% gelap — 50% redup (150 lux) — 100% standar (300-350 lux) — 150% terang (500 lux) — 200% sangat terang (700 lux). Standar SNI 300-350 lux untuk praktikum. Lampu plafon LED 36W 600×600.</div>
+      <div class="lux"><b>AC:</b> Split 2 PK, set 22°C, kapasitas 18000 BTU, daya 1500W, dipasang dinding atas 2.2 m.</div>
+      <div class="lux"><b>Ventilasi:</b> Kaca 1.2×0.4 m di atas dinding 2.6 m, sirkulasi silang + cahaya alami.</div>
+      <div class="lux"><b>Lokasi:</b> Lab berada di kompleks sekolah — utara Gedung Sekolah Utama, timur Perpustakaan, barat Gedung Kelas, selatan Lapangan Upacara + jalan akses. Koordinat lapangan 10.60.x.x.</div>
+    </body></html>`;
+    const blob=new Blob([html],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download='LabIPA-TataRuang-Final-'+Date.now()+'.html';
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    showToast('HTML final diunduh ('+items.length+' item)');
+  }catch(e){ showToast('Gagal download: '+e.message); }
 }
 function loadLayout(){
   try{
