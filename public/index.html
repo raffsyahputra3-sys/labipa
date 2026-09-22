@@ -807,32 +807,14 @@ canvas{display:block}
 .cover-cta:disabled{opacity:.5;cursor:not-allowed;box-shadow:4px 4px 0 var(--rule-soft)}
 
 /* ==================================================
-   OPENING SPLASH — RafDev logo + sound
+   OPENING SPLASH — logo only, auto-dismiss
    ================================================== */
-#opening{position:fixed;inset:0;z-index:200;background:radial-gradient(120% 100% at 50% 0%,#1E2A3C 0%,#0F1620 55%,#080D14 100%);
-  display:grid;place-items:center;padding:24px;overflow-y:auto}
+#opening{position:fixed;inset:0;z-index:200;background:#000;
+  display:grid;place-items:center;padding:0;overflow:hidden}
 #opening.hide{display:none}
-.opening-inner{position:relative;text-align:center;max-width:560px;width:100%;
-  padding:36px 32px 32px;background:rgba(237,231,211,.04);
-  border:1px solid rgba(240,160,52,.35);border-radius:16px;
-  box-shadow:0 20px 80px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.04) inset}
-.opening-logo{width:min(340px,72vw);height:auto;display:block;margin:0 auto 14px;
-  filter:drop-shadow(0 8px 30px rgba(240,160,52,.35));animation:logoIn .8s ease-out}
-@keyframes logoIn{from{opacity:0;transform:scale(.92) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
-.opening-title{font-family:var(--serif);font-size:30px;font-weight:600;color:var(--paper-hi);letter-spacing:-.01em}
-.opening-title em{color:var(--chrome-accent);font-style:italic}
-.opening-sub{font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;color:var(--chrome-fg-2);margin:8px 0 18px}
-.opening-bar{width:200px;height:2px;background:var(--chrome-rule);margin:0 auto 20px;position:relative;overflow:hidden;border-radius:2px}
-.opening-bar::after{content:'';position:absolute;left:-40%;top:0;width:40%;height:100%;background:var(--chrome-accent);animation:scan 1.4s ease-in-out infinite}
-.opening-cta{font-family:var(--sans);font-size:15px;font-weight:700;letter-spacing:.02em;
-  background:linear-gradient(180deg,var(--safety-hi),var(--safety));color:#fff;border:none;
-  padding:14px 44px;border-radius:10px;cursor:pointer;box-shadow:0 8px 24px rgba(217,119,6,.4);
-  transition:transform .15s,box-shadow .15s}
-.opening-cta:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(217,119,6,.55)}
-.opening-sound{margin-top:12px;background:transparent;border:1px solid var(--chrome-rule);color:var(--chrome-fg-2);
-  font-family:var(--mono);font-size:11px;letter-spacing:.08em;padding:8px 16px;border-radius:8px;cursor:pointer}
-.opening-sound:hover{color:var(--chrome-fg);border-color:var(--chrome-rule-2)}
-.opening-hint{margin-top:14px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--chrome-fg-2);opacity:.7}
+#opening img{width:100vw;height:100vh;object-fit:contain;display:block;
+  animation:logoIn .5s ease-out}
+@keyframes logoIn{from{opacity:0}to{opacity:1}}
 
 /* ==================================================
    MULTIPLAYER LOBBY
@@ -927,16 +909,8 @@ canvas{display:block}
 <body>
 
 <div id="opening">
-  <div class="opening-inner">
-    <img class="opening-logo" src="opening-logo.png" alt="RafDev logo">
-    <div class="opening-title">LabIPA <em>3D Studio</em></div>
-    <div class="opening-sub">BY RAFDEV · MULTIPLAYER LAB PERANCANG</div>
-    <div class="opening-bar"></div>
-    <button class="opening-cta" id="btnOpeningEnter" type="button">▶ Masuk</button><br>
-    <button class="opening-sound" id="btnOpeningSound" type="button">🔊 Sound: ON</button>
-    <div class="opening-hint">Klik Masuk untuk memutar jingle pembuka</div>
-    <audio id="openingAudio" src="opening-jingle.wav" preload="auto"></audio>
-  </div>
+  <img src="opening-logo.png" alt="Opening">
+  <audio id="openingAudio" src="opening-jingle.wav" preload="auto" style="display:none"></audio>
 </div>
 
 <div id="load">
@@ -3713,47 +3687,21 @@ tickClock();setInterval(tickClock,30000);
 animate();
 renderInspector();
 
-// ---------- OPENING SPLASH — RafDev logo + jingle ----------
-let openingSoundOn=true;
+// ---------- OPENING SPLASH — logo only, auto masuk ----------
 function playOpeningJingle(){
-  if(!openingSoundOn)return;
   const aud=document.getElementById('openingAudio');
   if(aud){
     try{ aud.currentTime=0; const pr=aud.play(); if(pr&&pr.catch)pr.catch(function(){}); }catch(e){}
   }
-  // WebAudio synth fallback / layer — fanfare C E G C' E' G'
-  try{
-    const AC=window.AudioContext||window.webkitAudioContext;
-    if(!AC)return;
-    const ctx=new AC();
-    const notes=[262,330,392,523,659,784];
-    let t0=ctx.currentTime+0.02;
-    notes.forEach(function(f,i){
-      const o=ctx.createOscillator(),g=ctx.createGain();
-      o.type=i>=4?'triangle':'sine'; o.frequency.value=f;
-      g.gain.setValueAtTime(0.0001,t0+i*0.16);
-      g.gain.exponentialRampToValueAtTime(0.5,t0+i*0.16+0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001,t0+i*0.16+0.34);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t0+i*0.16); o.stop(t0+i*0.16+0.4);
-    });
-  }catch(e){}
 }
-const btnSnd=document.getElementById('btnOpeningSound');
-if(btnSnd)btnSnd.addEventListener('click',function(e){
-  e.stopPropagation();
-  openingSoundOn=!openingSoundOn;
-  btnSnd.textContent=openingSoundOn?'🔊 Sound: ON':'🔇 Sound: OFF';
-  if(openingSoundOn)playOpeningJingle();
-});
-// Cover disembunyikan dulu — tampil setelah opening dismiss
+// Cover disembunyikan dulu — tampil otomatis setelah splash singkat
 document.getElementById('cover').style.display='none';
 const openingEl=document.getElementById('opening');
-document.getElementById('btnOpeningEnter').addEventListener('click',function(){
-  playOpeningJingle();
+playOpeningJingle();
+setTimeout(function(){
   if(openingEl)openingEl.classList.add('hide');
   document.getElementById('cover').style.display='grid';
-});
+},1800);
 document.getElementById('btnStart').addEventListener('click',function(){
   appStarted=true;
   updateCover();
