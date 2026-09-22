@@ -807,6 +807,34 @@ canvas{display:block}
 .cover-cta:disabled{opacity:.5;cursor:not-allowed;box-shadow:4px 4px 0 var(--rule-soft)}
 
 /* ==================================================
+   OPENING SPLASH — RafDev logo + sound
+   ================================================== */
+#opening{position:fixed;inset:0;z-index:200;background:radial-gradient(120% 100% at 50% 0%,#1E2A3C 0%,#0F1620 55%,#080D14 100%);
+  display:grid;place-items:center;padding:24px;overflow-y:auto}
+#opening.hide{display:none}
+.opening-inner{position:relative;text-align:center;max-width:560px;width:100%;
+  padding:36px 32px 32px;background:rgba(237,231,211,.04);
+  border:1px solid rgba(240,160,52,.35);border-radius:16px;
+  box-shadow:0 20px 80px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.04) inset}
+.opening-logo{width:min(340px,72vw);height:auto;display:block;margin:0 auto 14px;
+  filter:drop-shadow(0 8px 30px rgba(240,160,52,.35));animation:logoIn .8s ease-out}
+@keyframes logoIn{from{opacity:0;transform:scale(.92) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.opening-title{font-family:var(--serif);font-size:30px;font-weight:600;color:var(--paper-hi);letter-spacing:-.01em}
+.opening-title em{color:var(--chrome-accent);font-style:italic}
+.opening-sub{font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;color:var(--chrome-fg-2);margin:8px 0 18px}
+.opening-bar{width:200px;height:2px;background:var(--chrome-rule);margin:0 auto 20px;position:relative;overflow:hidden;border-radius:2px}
+.opening-bar::after{content:'';position:absolute;left:-40%;top:0;width:40%;height:100%;background:var(--chrome-accent);animation:scan 1.4s ease-in-out infinite}
+.opening-cta{font-family:var(--sans);font-size:15px;font-weight:700;letter-spacing:.02em;
+  background:linear-gradient(180deg,var(--safety-hi),var(--safety));color:#fff;border:none;
+  padding:14px 44px;border-radius:10px;cursor:pointer;box-shadow:0 8px 24px rgba(217,119,6,.4);
+  transition:transform .15s,box-shadow .15s}
+.opening-cta:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(217,119,6,.55)}
+.opening-sound{margin-top:12px;background:transparent;border:1px solid var(--chrome-rule);color:var(--chrome-fg-2);
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;padding:8px 16px;border-radius:8px;cursor:pointer}
+.opening-sound:hover{color:var(--chrome-fg);border-color:var(--chrome-rule-2)}
+.opening-hint{margin-top:14px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--chrome-fg-2);opacity:.7}
+
+/* ==================================================
    MULTIPLAYER LOBBY
    ================================================== */
 .mp-tabs{display:flex;gap:6px;margin-bottom:18px}
@@ -854,6 +882,24 @@ canvas{display:block}
   cursor:pointer;font-size:12px;padding:2px 4px}
 #mpPanel .mp-head button:hover{color:var(--safety)}
 #mpPlayers{max-height:180px;overflow-y:auto;padding:8px}
+.mp-player .crown[title="mic aktif"]{
+  color:#2E7C4A;
+  font-size:12px;
+}
+.mp-player .crown[title="sedang bicara"]{
+  color:#F0A034;
+  font-size:12px;
+  animation:micPulse .6s ease-in-out infinite alternate;
+}
+@keyframes micPulse{
+  from{opacity:.5;transform:scale(.9)}
+  to{opacity:1;transform:scale(1.15)}
+}
+#btnVoice.on{
+  background:linear-gradient(180deg,#3DA860,#2E7C4A);
+  color:#fff;border-color:#5FC080;
+  box-shadow:0 0 0 1px rgba(95,192,128,.35),0 4px 12px rgba(46,124,74,.35);
+}
 .mp-player{display:flex;align-items:center;gap:7px;padding:4px 2px;font-size:12px;color:var(--ink)}
 .mp-player .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;border:1px solid rgba(0,0,0,.25)}
 .mp-player .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -879,6 +925,19 @@ canvas{display:block}
 </style>
 </head>
 <body>
+
+<div id="opening">
+  <div class="opening-inner">
+    <img class="opening-logo" src="opening-logo.png" alt="RafDev logo">
+    <div class="opening-title">LabIPA <em>3D Studio</em></div>
+    <div class="opening-sub">BY RAFDEV · MULTIPLAYER LAB PERANCANG</div>
+    <div class="opening-bar"></div>
+    <button class="opening-cta" id="btnOpeningEnter" type="button">▶ Masuk</button><br>
+    <button class="opening-sound" id="btnOpeningSound" type="button">🔊 Sound: ON</button>
+    <div class="opening-hint">Klik Masuk untuk memutar jingle pembuka</div>
+    <audio id="openingAudio" src="opening-jingle.wav" preload="auto"></audio>
+  </div>
+</div>
 
 <div id="load">
   <div>MEMUAT · LABIPA 3D STUDIO</div>
@@ -1010,6 +1069,15 @@ canvas{display:block}
   </button>
   <button class="tb-btn icon-only" id="btnReset" title="Reset ruangan (R)">
     <span class="ico">🗑</span>
+  </button>
+  <button class="tb-btn icon-only" id="btnDownload" title="Download HTML layout (D)">
+    <span class="ico">📄</span>
+  </button>
+
+  <div class="sep"></div>
+
+  <button class="tb-btn" id="btnVoice" title="Voice chat (mic)">
+    <span class="ico">🎤</span><span class="lbl-txt">Voice</span>
   </button>
 
   <div class="sep"></div>
@@ -1265,6 +1333,7 @@ canvas{display:block}
 <div id="err"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
 <script>
 (function(){
 'use strict';
@@ -2399,159 +2468,225 @@ const playerMesh=new THREE.Group();
 playerMesh.visible=false;scene.add(playerMesh);
 
 // =============================================================
-// MULTIPLAYER (room presence + shared db world-state)
+// MULTIPLAYER — Socket.IO real-time
 // =============================================================
 const MP_COLORS=['#3D7EA6','#D97706','#2E5C3E','#8B1E1E','#6B4FA0','#C2410C','#0E7490','#A16207'];
 const MP={
-  room:null,db:null,ready:false,
-  enabled:false,code:null,username:'',color:MP_COLORS[0],isHost:false,
-  maxPlayers:6,uid:(Math.random().toString(36).slice(2,10)+Date.now().toString(36)),
-  worldUnsub:null,peersPollTimer:null,
-  avatars:new Map(),applyingRemote:false,
+  socket:null,ready:false,enabled:false,
+  code:null,username:'',color:MP_COLORS[0],isHost:false,
+  maxPlayers:6,uid:null,
+  peers:new Map(),           // sid -> presence
+  avatars:new Map(),         // sid -> avatar object
+  applyingRemote:false,
   presenceAccum:0,uiAccum:0
 };
+
+function mpSetStatus(el,msg,cls){
+  const n=document.getElementById(el);if(!n)return;
+  n.textContent=msg||'';
+  n.className='mp-status'+(cls?(' '+cls):'');
+}
 function mpMakeCode(){
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let s='';for(let i=0;i<6;i++)s+=chars[Math.floor(Math.random()*chars.length)];
   return s;
 }
-function mpRoomDoc(code){return MP.db.doc('rooms/'+code);}
-function mpPeersInRoom(code){
-  if(!MP.room)return[];
-  return MP.room.peers().filter(function(p){return p.presence&&p.presence.roomCode===code;});
-}
-function mpSetStatus(el,msg,cls){
-  const n=document.getElementById(el);if(!n)return;
-  n.textContent=msg||'';n.className='mp-status'+(cls?(' '+cls):'');
-}
 
-// ---- boot: resolve capabilities without blocking first paint ----
+// ---------- BOOT: connect socket ----------
 (function mpBoot(){
   const availEl=document.getElementById('mpAvail');
-  if(!(window.claude&&typeof window.claude.use==='function')){
-    if(availEl){availEl.textContent='Multiplayer tidak tersedia di tampilan ini — gunakan Mode Solo.';availEl.classList.add('err');}
+  if(typeof io==='undefined'){
+    if(availEl){
+      availEl.textContent='Socket.IO client tidak termuat — cek server & path /socket.io/socket.io.js';
+      availEl.classList.add('err');
+    }
     document.getElementById('btnMpCreate').disabled=true;
     document.getElementById('btnMpJoin').disabled=true;
     return;
   }
-  Promise.all([window.claude.use('room'),window.claude.use('db')]).then(function(res){
-    MP.room=res[0];MP.db=res[1];
-    if(!MP.room||!MP.db){
-      if(availEl){availEl.textContent='Multiplayer tidak tersedia di tampilan ini — gunakan Mode Solo.';availEl.classList.add('err');}
-      document.getElementById('btnMpCreate').disabled=true;
-      document.getElementById('btnMpJoin').disabled=true;
-      return;
-    }
+  MP.socket=io({transports:['websocket','polling']});
+
+  MP.socket.on('connect',()=>{
+    MP.uid=MP.socket.id;
     MP.ready=true;
-    if(availEl)availEl.textContent='Multiplayer siap. Room bersifat real-time untuk semua yang membuka halaman ini.';
+    voiceInitSocketListeners();   // ← tambahkan baris ini
+    if(availEl){
+      availEl.textContent='Server multiplayer siap · kamu = '+MP.uid.slice(0,6);
+      availEl.classList.remove('err');
+      availEl.classList.add('ok');
+    }
     document.getElementById('btnMpCreate').disabled=false;
     document.getElementById('btnMpJoin').disabled=false;
-  }).catch(function(){
-    if(availEl){availEl.textContent='Multiplayer tidak tersedia di tampilan ini — gunakan Mode Solo.';availEl.classList.add('err');}
+  });
+
+  MP.socket.on('disconnect',()=>{
+    MP.ready=false;
+    MP.enabled=false;
+    if(availEl){
+      availEl.textContent='Terputus dari server. Muat ulang halaman.';
+      availEl.classList.remove('ok');
+      availEl.classList.add('err');
+    }
+  });
+
+  MP.socket.on('connect_error',(e)=>{
+    if(availEl){
+      availEl.textContent='Gagal konek ke server: '+e.message;
+      availEl.classList.add('err');
+    }
+    MP.ready=false;
+  });
+
+  // ---------- ROOM STATE (datang saat join/create berhasil) ----------
+  MP.socket.on('room:state',(state)=>{
+    MP.enabled=true;
+    MP.code=state.code;
+    MP.maxPlayers=state.maxPlayers;
+    MP.isHost=!!(state.you&&state.you.isHost);
+    MP.color=(state.you&&state.you.color)||MP_COLORS[0];
+    if(state.you&&state.you.username)MP.username=state.you.username;
+
+    MP.peers.clear();
+    for(const p of state.peers){
+      if(p.isMe)continue;
+      MP.peers.set(p.peer,p.presence);
+    }
+
+    // bersihin avatar lama
+    MP.avatars.forEach(av=>scene.remove(av.group));
+    MP.avatars.clear();
+    // spawn avatar peer yang sudah ada
+    MP.peers.forEach((pres,sid)=>{
+      if(!MP.avatars.has(sid)){
+        MP.avatars.set(sid,mpCreateAvatar(pres.color,pres.username));
+      }
+    });
+
+    // apply world dari server
+    mpApplyRemoteWorldState(state.items||[]);
+
+    document.getElementById('mpRoomCode').textContent=MP.code;
+    document.getElementById('mpPanel').classList.add('on');
+    appStarted=true;updateCover();setCamMode('orbit');
+    mpRenderPlayerList();
+    showToast('Masuk room '+MP.code+(MP.isHost?' (host)':''));
+  });
+
+  MP.socket.on('peer:join',(m)=>{
+    MP.peers.set(m.peer,m.presence);
+    if(!MP.avatars.has(m.peer)){
+      MP.avatars.set(m.peer,mpCreateAvatar(m.presence.color,m.presence.username));
+    }
+    showToast((m.presence.username||'Pemain')+' bergabung');
+    mpRenderPlayerList();
+  });
+
+  MP.socket.on('peer:leave',(m)=>{
+    const pres=MP.peers.get(m.peer);
+    MP.peers.delete(m.peer);
+    const av=MP.avatars.get(m.peer);
+    if(av){scene.remove(av.group);MP.avatars.delete(m.peer);}
+    if(pres)showToast((pres.username||'Pemain')+' keluar');
+    mpRenderPlayerList();
+  });
+
+  MP.socket.on('peer:presence',(m)=>{
+    const p=MP.peers.get(m.peer);
+    if(p)Object.assign(p,m.presence);
+    else MP.peers.set(m.peer,m.presence);
+    const av=MP.avatars.get(m.peer);
+    if(av&&typeof m.presence.x==='number'){
+      av.targetPos.set(
+        m.presence.x,
+        (typeof m.presence.y==='number'?m.presence.y:1.6)-1.6,
+        m.presence.z
+      );
+      av.targetRotY=m.presence.rotY||0;
+      if(!av.inited){
+        av.group.position.copy(av.targetPos);
+        av.group.rotation.y=av.targetRotY;
+        av.inited=true;
+      }
+    }
+  });
+
+  MP.socket.on('world:update',(m)=>{
+    if(m.itemsUpdatedBy===MP.uid)return;
+    mpApplyRemoteWorldState(m.items||[]);
+  });
+
+  MP.socket.on('room:host',(m)=>{
+    if(m.peer===MP.uid){MP.isHost=true;showToast('Kamu sekarang host');}
+    mpRenderPlayerList();
   });
 })();
 
-// ---- lobby tabs ----
+// ---------- LOBBY TABS ----------
 document.querySelectorAll('.mp-tab').forEach(function(tab){
   tab.addEventListener('click',function(){
-    document.querySelectorAll('.mp-tab').forEach(function(t){t.classList.remove('on');});
-    document.querySelectorAll('.mp-panel').forEach(function(p){p.classList.remove('on');});
+    document.querySelectorAll('.mp-tab').forEach(t=>t.classList.remove('on'));
+    document.querySelectorAll('.mp-panel').forEach(p=>p.classList.remove('on'));
     tab.classList.add('on');
     document.querySelector('.mp-panel[data-mppanel="'+tab.dataset.mptab+'"]').classList.add('on');
   });
 });
 
-// ---- create room ----
-document.getElementById('btnMpCreate').addEventListener('click',async function(){
-  if(!MP.ready){mpSetStatus('mpCreateStatus','Layanan multiplayer belum siap, tunggu sebentar.');return;}
+// ---------- CREATE ROOM ----------
+document.getElementById('btnMpCreate').addEventListener('click',function(){
+  if(!MP.ready){mpSetStatus('mpCreateStatus','Belum terhubung ke server.');return;}
   const name=(document.getElementById('mpCreateName').value||'').trim().slice(0,16)||'Pemain';
   const max=parseInt(document.getElementById('mpCreateMax').value,10)||6;
-  const btn=this;btn.disabled=true;mpSetStatus('mpCreateStatus','Membuat room…','wait');
-  try{
-    const code=mpMakeCode();
-    await mpRoomDoc(code).set({maxPlayers:max,hostUid:MP.uid,hostName:name,createdAt:Date.now(),
-      items:PHYS.serialize(),itemsUpdatedAt:Date.now(),itemsUpdatedBy:MP.uid});
-    MP.color=MP_COLORS[0];
-    await mpEnterRoom(code,name,max,true);
-  }catch(e){
-    mpSetStatus('mpCreateStatus','Gagal membuat room: '+(e&&e.message?e.message:'coba lagi'));
-    btn.disabled=false;
-  }
+  MP.username=name;
+  const btn=this;btn.disabled=true;
+  mpSetStatus('mpCreateStatus','Membuat room…','wait');
+  MP.socket.emit('room:create',
+    {code:mpMakeCode(),name:name,maxPlayers:max,items:PHYS.serialize()},
+    (res)=>{
+      btn.disabled=false;
+      if(!res||!res.ok){
+        mpSetStatus('mpCreateStatus','Gagal: '+((res&&res.error)||'coba lagi'));
+        return;
+      }
+      mpSetStatus('mpCreateStatus','Room dibuat: '+res.code,'ok');
+    });
 });
 
-// ---- join room ----
-document.getElementById('btnMpJoin').addEventListener('click',async function(){
-  if(!MP.ready){mpSetStatus('mpJoinStatus','Layanan multiplayer belum siap, tunggu sebentar.');return;}
+// ---------- JOIN ROOM ----------
+document.getElementById('btnMpJoin').addEventListener('click',function(){
+  if(!MP.ready){mpSetStatus('mpJoinStatus','Belum terhubung ke server.');return;}
   const name=(document.getElementById('mpJoinName').value||'').trim().slice(0,16)||'Pemain';
   const code=(document.getElementById('mpJoinCode').value||'').trim().toUpperCase();
   if(!code){mpSetStatus('mpJoinStatus','Masukkan kode room dari host.');return;}
-  const btn=this;btn.disabled=true;mpSetStatus('mpJoinStatus','Mencari room…','wait');
-  try{
-    const snap=await mpRoomDoc(code).get();
-    if(!snap.exists){
-      mpSetStatus('mpJoinStatus','Room "'+code+'" tidak ditemukan. Cek kode lagi.');
-      btn.disabled=false;return;
-    }
-    const data=snap.data()||{};
-    const max=data.maxPlayers||6;
-    const current=mpPeersInRoom(code).length;
-    if(current>=max){
-      mpSetStatus('mpJoinStatus','Room penuh ('+current+'/'+max+' pemain).');
-      btn.disabled=false;return;
-    }
-    MP.color=MP_COLORS[current%MP_COLORS.length];
-    await mpEnterRoom(code,name,max,false);
-  }catch(e){
-    mpSetStatus('mpJoinStatus','Gagal bergabung: '+(e&&e.message?e.message:'coba lagi'));
+  MP.username=name;
+  const btn=this;btn.disabled=true;
+  mpSetStatus('mpJoinStatus','Mencari room…','wait');
+  MP.socket.emit('room:join',{code:code,name:name},(res)=>{
     btn.disabled=false;
-  }
+    if(!res||!res.ok){
+      mpSetStatus('mpJoinStatus','Gagal: '+((res&&res.error)||'coba lagi'));
+      return;
+    }
+    mpSetStatus('mpJoinStatus','Bergabung ke '+res.code,'ok');
+  });
 });
 
-async function mpEnterRoom(code,name,max,isHost){
-  MP.enabled=true;MP.code=code;MP.username=name;MP.maxPlayers=max;MP.isHost=isHost;
-
-  // Subscribe to shared world-state (applies to late joiners too)
-  MP.worldUnsub=mpRoomDoc(code).onSnapshot(function(snap){
-    if(!snap.exists)return;
-    const data=snap.data();if(!data)return;
-    if(typeof data.maxPlayers==='number')MP.maxPlayers=data.maxPlayers;
-    if(data.itemsUpdatedBy===MP.uid&&Date.now()-(data.itemsUpdatedAt||0)<1200)return;
-    mpApplyRemoteWorldState(data.items||[]);
-  },function(){});
-
-  // Announce presence immediately, then let the per-frame tick keep it fresh
-  await MP.room.presence({roomCode:code,uid:MP.uid,username:name,color:MP.color,
-    isHost:isHost,x:player.pos.x,y:player.pos.y,z:player.pos.z,rotY:yaw});
-
-  try{
-    MP.room.on('sys',function(msg){
-      if(msg.data&&msg.data.roomCode===MP.code&&!msg.isMe)showToast(msg.data.text);
-    });
-    MP.room.emit('sys',{roomCode:code,text:name+' bergabung ke room'});
-  }catch(e){}
-
-  document.getElementById('mpRoomCode').textContent=code;
-  document.getElementById('mpPanel').classList.add('on');
-
-  appStarted=true;updateCover();setCamMode('orbit');
-}
-
+// ---------- LEAVE ----------
 function mpLeaveRoom(){
-  if(!MP.enabled)return;
-  if(!confirm('Keluar dari room "'+MP.code+'"? Halaman akan dimuat ulang.'))return;
-  try{if(MP.room)MP.room.presence({roomCode:null});}catch(e){}
+  if(!MP.code)return;
+  if(!confirm('Keluar dari room "'+MP.code+'"?'))return;
+  try{MP.socket.disconnect();}catch(e){}
   location.reload();
 }
 document.getElementById('mpLeaveBtn').addEventListener('click',mpLeaveRoom);
 document.getElementById('mpCopyCode').addEventListener('click',function(){
   if(!MP.code)return;
-  const done=function(){showToast('Kode room disalin: '+MP.code);};
+  const done=()=>showToast('Kode room disalin: '+MP.code);
   if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(MP.code).then(done).catch(done);
   }else done();
 });
 
-// ---- shared world-state: push local changes (debounced, one write at a time) ----
+// ---------- PUSH WORLD STATE (debounced) ----------
 let mpLastFingerprint='';
 function mpComputeFingerprint(){
   let s=PHYS.bodies.length+'|';
@@ -2562,31 +2697,33 @@ function mpComputeFingerprint(){
   }
   return s;
 }
-let mpPushTimer=null,mpWriting=false,mpWritePending=false;
+let mpPushTimer=null,mpWritePending=false,mpWriting=false;
 function mpPushWorldStateDebounced(){
-  if(!MP.enabled||!MP.db||!MP.code)return;
+  if(!MP.code)return;
   if(mpPushTimer)clearTimeout(mpPushTimer);
-  mpPushTimer=setTimeout(mpPushWorldStateNow,350);
+  mpPushTimer=setTimeout(mpPushWorldStateNow,120);
 }
-async function mpPushWorldStateNow(){
-  if(!MP.enabled||!MP.db||!MP.code)return;
+function mpPushWorldStateNow(){
+  if(!MP.code)return;
   if(mpWriting){mpWritePending=true;return;}
   mpWriting=true;
-  try{
-    await mpRoomDoc(MP.code).update({items:PHYS.serialize(),itemsUpdatedAt:Date.now(),itemsUpdatedBy:MP.uid});
-  }catch(e){/* transient, next diff will retry */}
+  MP.socket.emit('world:update',{
+    items:PHYS.serialize(),
+    byUid:MP.uid,
+    at:Date.now()
+  });
   mpWriting=false;
   if(mpWritePending){mpWritePending=false;mpPushWorldStateNow();}
 }
 function mpMaybePushWorld(){
-  if(!MP.enabled||MP.applyingRemote)return;
+  if(!MP.code||MP.applyingRemote)return;
   const fp=mpComputeFingerprint();
   if(fp===mpLastFingerprint)return;
   mpLastFingerprint=fp;
   mpPushWorldStateDebounced();
 }
 
-// ---- shared world-state: apply a remote snapshot (rebuild scene from serialized items) ----
+// ---------- APPLY REMOTE WORLD ----------
 function mpApplyRemoteWorldState(items){
   if(!Array.isArray(items))return;
   MP.applyingRemote=true;
@@ -2638,7 +2775,8 @@ function mpMakeNameSprite(text,colorHex){
   const ctx=cnv.getContext('2d');
   const w=256,h=64,r=14;
   ctx.beginPath();
-  ctx.moveTo(r,0);ctx.arcTo(w,0,w,h,r);ctx.arcTo(w,h,0,h,r);ctx.arcTo(0,h,0,0,r);ctx.arcTo(0,0,w,0,r);ctx.closePath();
+  ctx.moveTo(r,0);ctx.arcTo(w,0,w,h,r);ctx.arcTo(w,h,0,h,r);
+  ctx.arcTo(0,h,0,0,r);ctx.arcTo(0,0,w,0,r);ctx.closePath();
   ctx.fillStyle='rgba(27,42,65,0.86)';ctx.fill();
   ctx.lineWidth=3;ctx.strokeStyle=colorHex||'#3D7EA6';ctx.stroke();
   ctx.fillStyle='#F5F0E0';
@@ -2653,28 +2791,32 @@ function mpMakeNameSprite(text,colorHex){
 }
 function mpCreateAvatar(colorHex,name){
   const group=new THREE.Group();
-  const torsoMat=simpleBoxMat(new THREE.Color(colorHex).getHex(),0.65);
+  const torsoMat=simpleBoxMat(new THREE.Color(colorHex||'#3D7EA6').getHex(),0.65);
   const skinMat=simpleBoxMat(0xE8C8A8,0.8);
   const legMat=simpleBoxMat(0x2A3A4A,0.75);
   const torso=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.55,0.22),torsoMat);
   torso.position.y=0.85;torso.castShadow=true;group.add(torso);
   const head=new THREE.Mesh(new THREE.SphereGeometry(0.14,16,12),skinMat);
   head.position.y=1.28;head.castShadow=true;group.add(head);
+  // Lengan
   const armGeo=new THREE.BoxGeometry(0.08,0.42,0.08);
   const leftArm=new THREE.Mesh(armGeo,torsoMat);
   leftArm.position.set(-0.26,0.82,0); leftArm.castShadow=true; group.add(leftArm);
   const rightArm=new THREE.Mesh(armGeo,torsoMat);
   rightArm.position.set(0.26,0.82,0); rightArm.castShadow=true; group.add(rightArm);
+  // Tangan
   const handGeo=new THREE.SphereGeometry(0.05,10,8);
   const leftHand=new THREE.Mesh(handGeo,skinMat);
   leftHand.position.set(-0.26,0.56,0); leftHand.castShadow=true; group.add(leftHand);
   const rightHand=new THREE.Mesh(handGeo,skinMat);
   rightHand.position.set(0.26,0.56,0); rightHand.castShadow=true; group.add(rightHand);
+  // Kaki
   const legGeo=new THREE.BoxGeometry(0.11,0.52,0.11);
   const leftLeg=new THREE.Mesh(legGeo,legMat);
   leftLeg.position.set(-0.11,0.28,0); leftLeg.castShadow=true; group.add(leftLeg);
   const rightLeg=new THREE.Mesh(legGeo,legMat);
   rightLeg.position.set(0.11,0.28,0); rightLeg.castShadow=true; group.add(rightLeg);
+  // Kaki bawah / sepatu
   const footGeo=new THREE.BoxGeometry(0.13,0.06,0.18);
   const leftFoot=new THREE.Mesh(footGeo,legMat);
   leftFoot.position.set(-0.11,0.03,0.04); leftFoot.castShadow=true; group.add(leftFoot);
@@ -2683,80 +2825,330 @@ function mpCreateAvatar(colorHex,name){
   const label=mpMakeNameSprite(name,colorHex);
   label.position.y=1.64;group.add(label);
   scene.add(group);
-  return {group:group,label:label,lastName:name,targetPos:new THREE.Vector3(),targetRotY:0,inited:false};
-}
-function mpUpdateAvatarLabel(av,name,colorHex){
-  const spr=mpMakeNameSprite(name,colorHex);
-  spr.position.y=1.64;
-  av.group.remove(av.label);
-  av.group.add(spr);
-  av.label=spr;av.lastName=name;
-}
-function mpSyncAvatars(){
-  if(!MP.enabled||!MP.room)return;
-  const peers=MP.room.peers();
-  const seen=new Set();
-  for(let i=0;i<peers.length;i++){
-    const p=peers[i];if(p.isMe)continue;
-    const pres=p.presence||{};
-    if(!pres.roomCode||pres.roomCode!==MP.code)continue;
-    seen.add(p.peer);
-    let av=MP.avatars.get(p.peer);
-    if(!av){av=mpCreateAvatar(pres.color,pres.username);MP.avatars.set(p.peer,av);}
-    if(typeof pres.x==='number'&&typeof pres.z==='number'){
-      av.targetPos.set(pres.x,(typeof pres.y==='number'?pres.y:1.6)-1.6,pres.z);
-      av.targetRotY=pres.rotY||0;
-      if(!av.inited){av.group.position.copy(av.targetPos);av.group.rotation.y=av.targetRotY;av.inited=true;}
-    }
-    if(pres.username&&pres.username!==av.lastName)mpUpdateAvatarLabel(av,pres.username,pres.color);
-  }
-  MP.avatars.forEach(function(av,pid){
-    if(!seen.has(pid)){scene.remove(av.group);MP.avatars.delete(pid);}
-  });
+  return {group:group,label:label,lastName:name,
+    targetPos:new THREE.Vector3(),targetRotY:0,inited:false};
 }
 function mpLerpAvatars(dt){
   MP.avatars.forEach(function(av){
-    av.group.position.lerp(av.targetPos,Math.min(1,dt*8));
+    av.group.position.lerp(av.targetPos,Math.min(1,dt*12));
     let dr=av.targetRotY-av.group.rotation.y;
-    while(dr>Math.PI)dr-=Math.PI*2;while(dr<-Math.PI)dr+=Math.PI*2;
-    av.group.rotation.y+=dr*Math.min(1,dt*8);
+    while(dr>Math.PI)dr-=Math.PI*2;
+    while(dr<-Math.PI)dr+=Math.PI*2;
+    av.group.rotation.y+=dr*Math.min(1,dt*12);
   });
 }
 
-// ---- HUD: room code + player list ----
+// ---------- HUD PLAYER LIST ----------
 function mpRenderPlayerList(){
   const el=document.getElementById('mpPlayers');if(!el)return;
-  const peers=MP.room?mpPeersInRoom(MP.code):[];
-  let html='<div class="mp-player"><span class="dot" style="background:'+MP.color+'"></span>'+
-    '<span class="nm">'+(MP.username||'Kamu')+' (kamu)</span>'+
-    (MP.isHost?'<span class="crown">👑</span>':'')+'</div>';
-  peers.forEach(function(p){
-    if(p.isMe)return;
-    const pres=p.presence||{};
-    html+='<div class="mp-player"><span class="dot" style="background:'+(pres.color||'#3D7EA6')+'"></span>'+
-      '<span class="nm">'+(pres.username||'Pemain')+'</span>'+
-      (pres.isHost?'<span class="crown">👑</span>':'')+'</div>';
+  let html=
+    '<div class="mp-player">'+
+      '<span class="dot" style="background:'+MP.color+'"></span>'+
+      '<span class="nm">'+(MP.username||'Kamu')+' (kamu)</span>'+
+      (MP.isHost?'<span class="crown">👑</span>':'')+
+      (VOICE.speakingLocal?'<span class="crown" title="sedang bicara">🔊</span>':'')+
+      (VOICE.capturing?'<span class="crown" title="mic aktif">🎙</span>':'')+
+    '</div>';
+  MP.peers.forEach(function(pres){
+    html+=
+      '<div class="mp-player">'+
+        '<span class="dot" style="background:'+(pres.color||'#3D7EA6')+'"></span>'+
+        '<span class="nm">'+(pres.username||'Pemain')+'</span>'+
+        (pres.isHost?'<span class="crown">👑</span>':'')+
+        (VOICE.speakingPeers.has(pres.uid)?'<span class="crown" title="sedang bicara">🔊</span>':'')+
+        (pres.voice?'<span class="crown" title="mic aktif">🎙</span>':'')+
+      '</div>';
   });
   el.innerHTML=html;
   const codeEl=document.getElementById('mpRoomCode');
-  if(codeEl)codeEl.textContent=MP.code+' · '+(peers.length+1)+'/'+MP.maxPlayers;
+  if(codeEl)codeEl.textContent=MP.code+' · '+(MP.peers.size+1)+'/'+MP.maxPlayers;
 }
 
-// ---- per-frame tick: presence broadcast + avatar sync + world diff-push ----
+// ---------- PER-FRAME TICK — low-latency (20Hz presence) ----------
 function mpTick(dt){
-  if(!MP.enabled||!MP.room)return;
+  if(!MP.socket||!MP.code)return;
   MP.presenceAccum+=dt;
-  if(MP.presenceAccum>1/12){
+  if(MP.presenceAccum>1/20){
     MP.presenceAccum=0;
-    MP.room.presence({roomCode:MP.code,uid:MP.uid,username:MP.username,color:MP.color,
-      isHost:MP.isHost,x:player.pos.x,y:player.pos.y,z:player.pos.z,rotY:yaw}).catch(function(){});
+    MP.socket.emit('presence:update',{
+      x:player.pos.x,y:player.pos.y,z:player.pos.z,rotY:yaw
+    });
   }
-  mpSyncAvatars();
   mpLerpAvatars(dt);
   mpMaybePushWorld();
   MP.uiAccum+=dt;
   if(MP.uiAccum>1){MP.uiAccum=0;mpRenderPlayerList();}
 }
+
+// =============================================================
+// VOICE CHAT — WebSocket audio streaming (raw PCM Int16)
+// =============================================================
+const VOICE = {
+  enabled: false,
+  capturing: false,
+  audioCtx: null,
+  micStream: null,
+  micSource: null,
+  processor: null,
+  silentGain: null,
+  playbackCtx: null,
+  playbackQueue: new Map(),    // peerId -> { time, lastActivity }
+  speakingPeers: new Set(),
+  speakingLocal: false,
+  lastVoiceTime: 0,
+  sampleRate: 48000,
+  chunkSize: 2048,
+  vadThreshold: 0.012,         // RMS minimum untuk dianggap suara
+  jitterBuffer: 0.08,          // 80ms buffer — low-latency voice
+  _cleanupTimer: null
+};
+
+async function voiceStart(){
+  if(!MP.code){ showToast('Join room dulu untuk voice chat'); return; }
+  if(VOICE.capturing) return;
+
+  try{
+    // 1. Izin mic
+    VOICE.micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1
+      }
+    });
+
+    const AC = window.AudioContext || window.webkitAudioContext;
+
+    // 2. Capture context
+    VOICE.audioCtx = new AC();
+    VOICE.sampleRate = VOICE.audioCtx.sampleRate;
+    VOICE.micSource = VOICE.audioCtx.createMediaStreamSource(VOICE.micStream);
+    VOICE.processor = VOICE.audioCtx.createScriptProcessor(VOICE.chunkSize, 1, 1);
+
+    VOICE.processor.onaudioprocess = function(e){
+      if(!VOICE.enabled) return;
+      const input = e.inputBuffer.getChannelData(0);
+
+      // VAD: hitung RMS
+      let sum = 0;
+      for(let i = 0; i < input.length; i++) sum += input[i] * input[i];
+      const rms = Math.sqrt(sum / input.length);
+
+      const now = performance.now();
+      if(rms < VOICE.vadThreshold){
+        // Diam → tidak kirim, tapi update indicator
+        if(VOICE.speakingLocal && now - VOICE.lastVoiceTime > 350){
+          VOICE.speakingLocal = false;
+          updateVoiceUI();
+        }
+        return;
+      }
+
+      // Konversi Float32 → Int16 (mono)
+      const int16 = new Int16Array(input.length);
+      for(let i = 0; i < input.length; i++){
+        const s = Math.max(-1, Math.min(1, input[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+
+      // Kirim via socket binary
+      if(MP.socket && MP.socket.connected){
+        MP.socket.emit('voice:data', int16.buffer);
+      }
+
+      VOICE.lastVoiceTime = now;
+      if(!VOICE.speakingLocal){
+        VOICE.speakingLocal = true;
+        updateVoiceUI();
+      }
+    };
+
+    VOICE.micSource.connect(VOICE.processor);
+    // ScriptProcessor harus terhubung ke destination agar onaudioprocess dipanggil.
+    // Trik: gain 0 supaya tidak dengar diri sendiri.
+    VOICE.silentGain = VOICE.audioCtx.createGain();
+    VOICE.silentGain.gain.value = 0;
+    VOICE.processor.connect(VOICE.silentGain);
+    VOICE.silentGain.connect(VOICE.audioCtx.destination);
+
+    // 3. Playback context
+    VOICE.playbackCtx = new AC();
+
+    // 4. Beritahu server
+    MP.socket.emit('voice:start');
+    VOICE.enabled = true;
+    VOICE.capturing = true;
+
+    // 5. Timer pembersih speaking indicator
+    if(!VOICE._cleanupTimer){
+      VOICE._cleanupTimer = setInterval(voiceCleanupSpeaking, 200);
+    }
+
+    showToast('🎤 Voice chat aktif');
+    updateVoiceUI();
+
+  } catch(err){
+    console.error('[VOICE] start failed:', err);
+    showToast('Gagal akses mic: ' + (err.message || err));
+    voiceStop();
+  }
+}
+
+function voiceStop(){
+  VOICE.enabled = false;
+  VOICE.capturing = false;
+
+  if(VOICE.processor){
+    try{ VOICE.processor.disconnect(); }catch(e){}
+    VOICE.processor.onaudioprocess = null;
+    VOICE.processor = null;
+  }
+  if(VOICE.micSource){
+    try{ VOICE.micSource.disconnect(); }catch(e){}
+    VOICE.micSource = null;
+  }
+  if(VOICE.silentGain){
+    try{ VOICE.silentGain.disconnect(); }catch(e){}
+    VOICE.silentGain = null;
+  }
+  if(VOICE.micStream){
+    VOICE.micStream.getTracks().forEach(function(t){ t.stop(); });
+    VOICE.micStream = null;
+  }
+  if(VOICE.audioCtx){
+    try{ VOICE.audioCtx.close(); }catch(e){}
+    VOICE.audioCtx = null;
+  }
+  if(VOICE.playbackCtx){
+    try{ VOICE.playbackCtx.close(); }catch(e){}
+    VOICE.playbackCtx = null;
+  }
+  VOICE.playbackQueue.clear();
+  VOICE.speakingPeers.clear();
+  VOICE.speakingLocal = false;
+
+  if(VOICE._cleanupTimer){
+    clearInterval(VOICE._cleanupTimer);
+    VOICE._cleanupTimer = null;
+  }
+
+  if(MP.socket && MP.socket.connected){
+    MP.socket.emit('voice:stop');
+  }
+  updateVoiceUI();
+}
+
+function voiceToggle(){
+  if(VOICE.capturing) voiceStop();
+  else voiceStart();
+}
+
+// ---------- Playback: decode Int16 → schedule ke AudioBufferSource ----------
+function voicePlayChunk(peerId, arrayBuffer){
+  if(!VOICE.playbackCtx || !VOICE.enabled) return;
+
+  const int16 = new Int16Array(arrayBuffer);
+  if(int16.length === 0) return;
+
+  const float32 = new Float32Array(int16.length);
+  for(let i = 0; i < int16.length; i++){
+    float32[i] = int16[i] / (int16[i] < 0 ? 0x8000 : 0x7FFF);
+  }
+
+  const ctx = VOICE.playbackCtx;
+  const buffer = ctx.createBuffer(1, float32.length, VOICE.sampleRate);
+  buffer.copyToChannel(float32, 0);
+
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+
+  let state = VOICE.playbackQueue.get(peerId);
+  if(!state){
+    state = { time: 0, lastActivity: 0 };
+    VOICE.playbackQueue.set(peerId, state);
+  }
+
+  const now = ctx.currentTime;
+  // Resync kalau playback time sudah ketinggalan
+  if(state.time < now + 0.02){
+    state.time = now + VOICE.jitterBuffer;
+  }
+
+  try{
+    src.start(state.time);
+    state.time += buffer.duration;
+  }catch(e){
+    try{ src.start(now + 0.05); state.time = now + 0.05 + buffer.duration; }catch(_){}
+  }
+
+  state.lastActivity = performance.now();
+  if(!VOICE.speakingPeers.has(peerId)){
+    VOICE.speakingPeers.add(peerId);
+    updateVoiceUI();
+  }
+}
+
+function voiceCleanupSpeaking(){
+  const now = performance.now();
+  let changed = false;
+
+  VOICE.playbackQueue.forEach(function(state, peerId){
+    if(VOICE.speakingPeers.has(peerId) && now - state.lastActivity > 350){
+      VOICE.speakingPeers.delete(peerId);
+      changed = true;
+    }
+  });
+  if(VOICE.speakingLocal && now - VOICE.lastVoiceTime > 350){
+    VOICE.speakingLocal = false;
+    changed = true;
+  }
+  if(changed) updateVoiceUI();
+}
+
+// ---------- Socket listeners (dipanggil setelah mpBoot) ----------
+function voiceInitSocketListeners(){
+  if(!MP.socket) return;
+
+  MP.socket.on('voice:data', function(msg){
+    if(!VOICE.enabled) return;
+    if(!msg || msg.peer === MP.uid) return;
+    const c = msg.chunk;
+    if(!c) return;
+    if(c instanceof ArrayBuffer) voicePlayChunk(msg.peer, c);
+    else if(c instanceof Uint8Array) voicePlayChunk(msg.peer, c.buffer.slice(c.byteOffset, c.byteOffset + c.byteLength));
+    else if(c.buffer instanceof ArrayBuffer) voicePlayChunk(msg.peer, c.buffer);
+  });
+
+  MP.socket.on('voice:peer-start', function(msg){
+    // optional: log atau tampilkan notif
+  });
+
+  MP.socket.on('voice:peer-stop', function(msg){
+    VOICE.speakingPeers.delete(msg.peer);
+    VOICE.playbackQueue.delete(msg.peer);
+    updateVoiceUI();
+  });
+}
+
+// ---------- UI ----------
+function updateVoiceUI(){
+  const btn = document.getElementById('btnVoice');
+  if(btn){
+    btn.classList.toggle('on', VOICE.capturing);
+    const ico = btn.querySelector('.ico');
+    if(ico) ico.textContent = VOICE.capturing ? '🎙' : '🎤';
+    const lbl = btn.querySelector('.lbl-txt');
+    if(lbl) lbl.textContent = VOICE.capturing ? 'Mic On' : 'Voice';
+  }
+  // update indicator di player list
+  mpRenderPlayerList();
+}
+
+// Hook ke socket — jalankan di dalam mpBoot setelah 'connect'
+// (kita panggil dari sana lewat event connect)
+
 
 // =============================================================
 // POINTER LOCK
@@ -2798,6 +3190,11 @@ document.addEventListener('keydown',function(e){
   if(!appStarted)return;
 
   keys[e.code]=true;
+  if(e.code==='KeyY'){
+    voiceToggle();
+    e.preventDefault();
+    return;
+  }
   if(e.code==='KeyI'){toggleInventory();e.preventDefault();return;}
   if(e.code==='KeyH'){togglePanel();e.preventDefault();return;}
   if(e.code==='Escape'){
@@ -2854,6 +3251,14 @@ document.addEventListener('keydown',function(e){
   if(e.code==='KeyD'&&!PLACEMENT.active){ downloadLayoutHTML(); e.preventDefault(); }
 });
 document.addEventListener('keyup',function(e){keys[e.code]=false;});
+
+const voiceBtnEl = document.getElementById('btnVoice');
+if(voiceBtnEl){
+  voiceBtnEl.addEventListener('click', function(e){
+    e.stopPropagation();
+    voiceToggle();
+  });
+}
 
 document.querySelectorAll('.cat-item').forEach(function(btn){
   btn.addEventListener('click',function(e){
@@ -3070,6 +3475,45 @@ function checkColl(x,z,r){
   }
   return false;
 }
+// ---------- COLLIDER: player vs walls + doors + furniture ----------
+// Pintu bersifat dinamis: daun dihitung dari rotasi aktual (rotY+currentAngle)
+// sehingga saat terbuka pemain bisa lewat, saat tertutup menghalangi.
+function collideDoorLeaf(x,z,r,d){
+  const ang=d.rotY+d.currentAngle;
+  const cos=Math.cos(ang),sin=Math.sin(ang);
+  const dx=x-d.x,dz=z-d.z;
+  // world -> door-local (inverse rotY)
+  const lx=cos*dx-sin*dz;
+  const lz=sin*dx+cos*dz;
+  const hw=d.w,thick=0.09;
+  if(lx>-r&&lx<hw+r&&lz>-thick-r&&lz<thick+r)return true;
+  return false;
+}
+function collidePlayerWithWallsAndDoors(x,z,r){
+  r=r||player.radius;
+  // 1) dinding statis
+  if(checkColl(x,z,r))return true;
+  // 2) daun pintu dinamis
+  for(let i=0;i<doors.length;i++){
+    if(collideDoorLeaf(x,z,r,doors[i]))return true;
+  }
+  // 3) furniture / item di lantai (abaikan yg menempel tinggi di dinding)
+  if(typeof PHYS!=='undefined'&&PHYS.bodies){
+    for(let i=0;i<PHYS.bodies.length;i++){
+      const b=PHYS.bodies[i];
+      if(!b||!b.mesh||!b.aabb)continue;
+      const by=b.mesh.position.y;
+      // item dinding/plafon yg tinggi (AC, ventilasi, lampu) tidak menghalangi jalan
+      if(by>1.4)continue;
+      let hw=b.aabb.w/2,hd=b.aabb.d/2;
+      const ry=b.mesh.rotation?b.mesh.rotation.y:0;
+      if(Math.abs(Math.sin(ry))>0.7){const t=hw;hw=hd;hd=t;}
+      const bx=b.mesh.position.x,bz=b.mesh.position.z;
+      if(x+r>bx-hw&&x-r<bx+hw&&z+r>bz-hd&&z-r<bz+hd)return true;
+    }
+  }
+  return false;
+}
 
 // =============================================================
 // STATS
@@ -3196,8 +3640,8 @@ function animate(){
       if(len>0){
         mx=mx/len*sp*dt;mz=mz/len*sp*dt;
         const nx=player.pos.x+mx,nz=player.pos.z+mz;
-        if(!checkColl(nx,player.pos.z))player.pos.x=nx;
-        if(!checkColl(player.pos.x,nz))player.pos.z=nz;
+        if(!collidePlayerWithWallsAndDoors(nx,player.pos.z))player.pos.x=nx;
+        if(!collidePlayerWithWallsAndDoors(player.pos.x,nz))player.pos.z=nz;
       }
       if(keys['Space']&&player.onGround){player.velY=player.jumpForce;player.onGround=false;}
       if(!player.onGround){
@@ -3269,7 +3713,47 @@ tickClock();setInterval(tickClock,30000);
 animate();
 renderInspector();
 
-document.getElementById('cover').style.display='grid';
+// ---------- OPENING SPLASH — RafDev logo + jingle ----------
+let openingSoundOn=true;
+function playOpeningJingle(){
+  if(!openingSoundOn)return;
+  const aud=document.getElementById('openingAudio');
+  if(aud){
+    try{ aud.currentTime=0; const pr=aud.play(); if(pr&&pr.catch)pr.catch(function(){}); }catch(e){}
+  }
+  // WebAudio synth fallback / layer — fanfare C E G C' E' G'
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return;
+    const ctx=new AC();
+    const notes=[262,330,392,523,659,784];
+    let t0=ctx.currentTime+0.02;
+    notes.forEach(function(f,i){
+      const o=ctx.createOscillator(),g=ctx.createGain();
+      o.type=i>=4?'triangle':'sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0.0001,t0+i*0.16);
+      g.gain.exponentialRampToValueAtTime(0.5,t0+i*0.16+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+i*0.16+0.34);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t0+i*0.16); o.stop(t0+i*0.16+0.4);
+    });
+  }catch(e){}
+}
+const btnSnd=document.getElementById('btnOpeningSound');
+if(btnSnd)btnSnd.addEventListener('click',function(e){
+  e.stopPropagation();
+  openingSoundOn=!openingSoundOn;
+  btnSnd.textContent=openingSoundOn?'🔊 Sound: ON':'🔇 Sound: OFF';
+  if(openingSoundOn)playOpeningJingle();
+});
+// Cover disembunyikan dulu — tampil setelah opening dismiss
+document.getElementById('cover').style.display='none';
+const openingEl=document.getElementById('opening');
+document.getElementById('btnOpeningEnter').addEventListener('click',function(){
+  playOpeningJingle();
+  if(openingEl)openingEl.classList.add('hide');
+  document.getElementById('cover').style.display='grid';
+});
 document.getElementById('btnStart').addEventListener('click',function(){
   appStarted=true;
   updateCover();

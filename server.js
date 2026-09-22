@@ -16,8 +16,8 @@ const io = new Server(server, {
     methods: ['GET', 'POST']
   },
   maxHttpBufferSize: 1e6,   // 1 MB — cukup untuk chunk voice
-  pingTimeout: 25000,
-  pingInterval: 20000
+  pingTimeout: 10000,
+  pingInterval: 5000
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
