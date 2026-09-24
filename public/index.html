@@ -41,7 +41,8 @@ canvas{display:block}
 #topbar{
   position:fixed;top:0;left:0;right:0;height:var(--topbarH);
   z-index:40;
-  background:linear-gradient(180deg,var(--chrome-2),var(--chrome));
+  background:linear-gradient(180deg,rgba(21,32,46,.84),rgba(15,22,32,.84));
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   border-bottom:1px solid var(--chrome-rule-2);
   display:flex;align-items:center;
   padding:0 14px;gap:12px;
@@ -98,7 +99,9 @@ canvas{display:block}
   background:var(--chrome-3);color:var(--chrome-fg);
   border-color:var(--chrome-rule-2);
 }
-.tb-btn:active{transform:translateY(1px)}
+.tb-btn:active{transform:translateY(1px) scale(.97)}
+#vignette{position:absolute;inset:0;pointer-events:none;z-index:12;
+  background:radial-gradient(ellipse at center,transparent 58%,rgba(10,15,25,.30) 100%);}
 .tb-btn.on{
   background:linear-gradient(180deg,#2A7FE0,#1E5FB0);
   color:#fff;border-color:#4FA0F5;
@@ -1263,12 +1266,14 @@ div[data-mppanel="solo"] .cover-cta{
   </button>
 
   <div class="sep"></div>
+  <div class="time" id="fps">— FPS</div>
   <div class="time" id="topTime">--:--</div>
 </div>
 
 <div id="stage">
   <div id="viewWrap">
     <div id="crosshair"><span class="cd"></span></div>
+    <div id="vignette"></div>
     <div id="placeHint"></div>
 
     <aside id="inspector" aria-live="polite">
@@ -1571,7 +1576,21 @@ const C={
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(C.sky);
-scene.fog=new THREE.Fog(0xBACBD0,90,220);
+scene.fog=new THREE.FogExp2(0xBACBD0,0.008);
+// Kubah langit gradient (ganti flat color)
+const skyGeo=new THREE.SphereGeometry(300,32,15);
+const skyMat=new THREE.ShaderMaterial({
+  uniforms:{
+    topColor:{value:new THREE.Color(0x4A7BB5)},
+    bottomColor:{value:new THREE.Color(0xDFE8EE)},
+    offset:{value:20},
+    exponent:{value:0.6}
+  },
+  vertexShader:'varying vec3 vWorldPosition;void main(){vec4 wp=modelMatrix*vec4(position,1.0);vWorldPosition=wp.xyz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:'uniform vec3 topColor;uniform vec3 bottomColor;uniform float offset;uniform float exponent;varying vec3 vWorldPosition;void main(){float h=normalize(vWorldPosition+offset).y;gl_FragColor=vec4(mix(bottomColor,topColor,max(pow(max(h,0.0),exponent),0.0)),1.0);}',
+  side:THREE.BackSide,depthWrite:false,fog:false
+});
+const skyDome=new THREE.Mesh(skyGeo,skyMat);scene.add(skyDome);
 
 const camera=new THREE.PerspectiveCamera(60,1,0.08,400);
 camera.rotation.order='YXZ';
@@ -1587,43 +1606,88 @@ renderer.toneMappingExposure=1.05;
 renderer.outputEncoding=THREE.sRGBEncoding;
 document.getElementById('viewWrap').appendChild(renderer.domElement);
 
-const ambient=new THREE.AmbientLight(0xffffff,0.55);scene.add(ambient);
-const sun=new THREE.DirectionalLight(0xFFF0D8,1.05);
+const ambient=new THREE.AmbientLight(0xffffff,0.25);scene.add(ambient);
+// LAYER 1 KEY (matahari, satu-satunya shadow-caster luar ruang)
+const sun=new THREE.DirectionalLight(0xFFF4E0,1.6);
 sun.position.set(42,58,26);sun.castShadow=true;
 sun.shadow.mapSize.width=2048;sun.shadow.mapSize.height=2048;
 sun.shadow.camera.left=-50;sun.shadow.camera.right=50;
 sun.shadow.camera.top=50;sun.shadow.camera.bottom=-50;
 sun.shadow.camera.near=1;sun.shadow.camera.far=170;
-sun.shadow.bias=-0.0004;scene.add(sun);
-const hemi=new THREE.HemisphereLight(0xD6E2E5,0x8A7B5C,0.42);scene.add(hemi);
+sun.shadow.bias=-0.0004;sun.shadow.normalBias=0.02;scene.add(sun);
+// LAYER 2 FILL (pantulan langit, cool)
+const fill=new THREE.DirectionalLight(0xB8D4E8,0.6);
+fill.position.set(-30,20,-20);scene.add(fill);
+// LAYER 3 RIM (backlight hangat, pemisah siluet)
+const rim=new THREE.DirectionalLight(0xFFD8A0,0.4);
+rim.position.set(10,15,-40);scene.add(rim);
+// LAYER 4 AMBIENT (hemisphere tanah-langit)
+const hemi=new THREE.HemisphereLight(0xD6E2E5,0x8A7B5C,0.55);scene.add(hemi);
 const labLights=[];
 [[-3,-2.5],[1,-2.5],[5,-2.5],[-3,2.5],[1,2.5],[5,2.5]].forEach(function(p){
-  const pl=new THREE.PointLight(0xFFF0D8,0.55,15,2);
+  const pl=new THREE.PointLight(0xFFF0D8,0.8,12,2);
   pl.position.set(p[0],3.3,p[1]);
   scene.add(pl);labLights.push(pl);
 });
 
 // ============== LINGKUNGAN ==============
 const grass=new THREE.Mesh(new THREE.BoxGeometry(240,0.2,240),
-  new THREE.MeshStandardMaterial({color:C.grass,roughness:1}));
+  new THREE.MeshStandardMaterial({color:0xffffff,roughness:1,map:PROC.ground(0x6B8F4E,0x4C7A3F,71,28)}));
 grass.position.y=-0.15;grass.receiveShadow=true;scene.add(grass);
 const pave=new THREE.Mesh(new THREE.BoxGeometry(80,0.05,50),
-  new THREE.MeshStandardMaterial({color:C.paving,roughness:0.95}));
+  new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.95,map:PROC.tile(0xC9C0A5,0x9a917a,10,72,16)}));
 pave.position.set(0,-0.02,0);pave.receiveShadow=true;scene.add(pave);
 
+const trunkMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.95,map:PROC.wood(0x5B4632,0x33261a,73)});
+const leafMats={
+  beringin:new THREE.MeshStandardMaterial({color:0x3E6B34,roughness:0.95}),
+  trembesi:new THREE.MeshStandardMaterial({color:0x2E5C3E,roughness:0.95}),
+  mahoni:new THREE.MeshStandardMaterial({color:0x557B2F,roughness:0.95})
+};
+const leafGeo=new THREE.IcosahedronGeometry(1,0);
 function tree(x,z,k){
   const g=new THREE.Group();g.position.set(x,0,z);scene.add(g);
-  const th=k==='beringin'?4:5;
-  const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.62,th,10),
-    new THREE.MeshStandardMaterial({color:0x5B4632,roughness:0.95}));
-  tr.position.y=th/2;tr.castShadow=true;g.add(tr);
-  const r=k==='beringin'?4.5:3.5;
-  const leafMat=new THREE.MeshStandardMaterial({
-    color:k==='trembesi'?0x2E5C3E:0x4C7A3F,roughness:0.95});
+  const R=PROC.seededRandom((x*13+z*7+100)|0);
+  const lm=leafMats[k]||leafMats.mahoni;
+  function blob(px,py,pz,r){
+    const p=new THREE.Mesh(leafGeo,lm);
+    p.scale.set(r*(0.85+R()*0.4),r*(0.7+R()*0.35),r*(0.85+R()*0.4));
+    p.position.set(px,py,pz);p.rotation.y=R()*6.28;p.castShadow=true;g.add(p);
+  }
+  // Akar (5 tonjolan di dasar)
   for(let i=0;i<5;i++){
-    const p=new THREE.Mesh(new THREE.SphereGeometry(r*(0.7+Math.random()*0.3),10,10),leafMat);
-    p.position.set((Math.random()-0.5)*r*1.2,th+r*0.5+Math.random()*1.5,(Math.random()-0.5)*r*1.2);
-    p.castShadow=true;g.add(p);
+    const a=(i/5)*Math.PI*2+R();
+    const root=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.14,0.7,6),trunkMat);
+    root.position.set(Math.cos(a)*0.5,0.25,Math.sin(a)*0.5);
+    root.rotation.z=Math.cos(a)*0.5;root.rotation.x=-Math.sin(a)*0.5;g.add(root);
+  }
+  if(k==='beringin'){
+    // Batang pendek gemuk + cabang + tajuk lebar
+    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.62,4,10),trunkMat);
+    tr.position.y=2;tr.castShadow=true;g.add(tr);
+    for(let i=0;i<4;i++){
+      const a=(i/4)*Math.PI*2+0.4;
+      const br=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.2,2.6,7),trunkMat);
+      br.position.set(Math.cos(a)*1.1,4.6,Math.sin(a)*1.1);
+      br.rotation.z=Math.cos(a)*0.7;br.rotation.x=-Math.sin(a)*0.7;br.castShadow=true;g.add(br);
+    }
+    for(let i=0;i<6;i++)blob((R()-0.5)*7,5.6+R()*2.2,(R()-0.5)*7,2.0+R()*0.9);
+  }else if(k==='trembesi'){
+    // Batang tinggi + tajuk payung mendatar
+    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.45,5.5,10),trunkMat);
+    tr.position.y=2.75;tr.castShadow=true;g.add(tr);
+    for(let i=0;i<5;i++){
+      const a=(i/5)*Math.PI*2;
+      const br=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.15,3.0,7),trunkMat);
+      br.position.set(Math.cos(a)*1.3,5.6,Math.sin(a)*1.3);
+      br.rotation.z=Math.cos(a)*0.9;br.rotation.x=-Math.sin(a)*0.9;g.add(br);
+    }
+    for(let i=0;i<5;i++)blob((R()-0.5)*8,6.6+R()*0.8,(R()-0.5)*8,1.7+R()*0.6);
+  }else{
+    // Mahoni: ramping mengerucut ke atas
+    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.4,4.5,9),trunkMat);
+    tr.position.y=2.25;tr.castShadow=true;g.add(tr);
+    blob(0,5.2,0,1.9);blob(0.4,6.3,0.2,1.5);blob(-0.3,7.3,-0.2,1.1);blob(0.1,8.1,0,0.8);
   }
 }
 [[-18,-12],[-12,-14],[-6,-13],[4,-13],[12,-14],[18,-12],
@@ -1633,34 +1697,75 @@ function tree(x,z,k){
 
 const fenceMat=new THREE.MeshStandardMaterial({color:0x2A3844,metalness:0.4,roughness:0.6});
 // ============== LINGKUNGAN SEKOLAH ==============
-function addSchoolBuilding(x,z,w,d,h,color){
-  const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color:color,roughness:0.85}));
-  b.position.set(x,h/2,z); b.castShadow=true; b.receiveShadow=true; scene.add(b);
-  // Atap
-  const roof=new THREE.Mesh(new THREE.BoxGeometry(w+0.3,0.25,d+0.3),new THREE.MeshStandardMaterial({color:0x8B4513,roughness:0.9}));
-  roof.position.set(x,h+0.12,z); scene.add(roof);
-  // Jendela
-  for(let ix=-w/2+1.2; ix<w/2-0.8; ix+=2){
-    const win=new THREE.Mesh(new THREE.BoxGeometry(1.2,1.4,0.08),new THREE.MeshStandardMaterial({color:0xA8C7D4,transparent:true,opacity:0.45}));
-    win.position.set(x+ix,h/2,z+d/2+0.04); scene.add(win);
-  }
-  // Pintu sekolah
-  const door=new THREE.Mesh(new THREE.BoxGeometry(1.4,2.2,0.08),new THREE.MeshStandardMaterial({color:0x5D4037,roughness:0.8}));
-  door.position.set(x,h/2-0.3,z+d/2+0.04); scene.add(door);
-  // Label
-  const cnv=document.createElement('canvas'); cnv.width=512; cnv.height=128;
-  const ctx=cnv.getContext('2d'); ctx.fillStyle='#1B2A41'; ctx.fillRect(0,0,512,128);
-  ctx.fillStyle='#F5F0E0'; ctx.font='700 28px Inter'; ctx.textAlign='center'; ctx.fillText('GEDUNG SEKOLAH',256,75);
-  const tex=new THREE.CanvasTexture(cnv);
-  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex}));
-  spr.position.set(x,h+1.5,z+d/2+0.5); spr.scale.set(6,1.5,1); scene.add(spr);
+const bldWallMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.85,map:PROC.concrete(0xEDE7D3,74,4)});
+const bldRoofMat=new THREE.MeshStandardMaterial({color:0x8B3A2A,roughness:0.85,map:PROC.concrete(0x8B3A2A,75,4)});
+const bldGlassMat=new THREE.MeshPhysicalMaterial({color:0xCFE0E8,roughness:0.08,metalness:0.1,transparent:true,opacity:0.6,transmission:0.5,ior:1.5});
+const bldFrameMat=new THREE.MeshStandardMaterial({color:0x2A3844,roughness:0.6,metalness:0.3});
+function signTexture(text){
+  const cnv=document.createElement('canvas');cnv.width=512;cnv.height=128;
+  const ctx=cnv.getContext('2d');
+  ctx.fillStyle='#1B2A41';ctx.fillRect(0,0,512,128);
+  ctx.strokeStyle='#F0A034';ctx.lineWidth=6;ctx.strokeRect(8,8,496,112);
+  ctx.fillStyle='#F5F0E0';ctx.font='700 44px Inter,sans-serif';ctx.textAlign='center';
+  ctx.fillText(text,256,82);
+  const t=new THREE.CanvasTexture(cnv);t.encoding=THREE.sRGBEncoding;
+  return t;
 }
-// Gedung Sekolah Utama (utara lab)
-addSchoolBuilding(0,-14,28,10,6,0xEDE7D3);
+function addSchoolBuilding(x,z,w,d,h,color,label){
+  const wallM=color?(new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.85,map:PROC.concrete(color,74+(x|0)+(z|0),4)})):bldWallMat;
+  const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),wallM);
+  b.position.set(x,h/2,z); b.castShadow=true; b.receiveShadow=true; scene.add(b);
+  // Atap miring (2 sisi) + lis
+  const slopeLen=Math.sqrt(Math.pow(d/2+0.5,2)+Math.pow(1.4,2));
+  const ang=Math.atan2(1.4,d/2+0.5);
+  [-1,1].forEach(function(s){
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(w+0.6,0.12,slopeLen),bldRoofMat);
+    roof.position.set(x,h+0.7,z+s*(d/4+0.12));
+    roof.rotation.x=s*ang;roof.castShadow=true;scene.add(roof);
+  });
+  const ridge=new THREE.Mesh(new THREE.BoxGeometry(w+0.6,0.14,0.3),bldRoofMat);
+  ridge.position.set(x,h+1.42,z);scene.add(ridge);
+  // Pilaster tiap 4m di fasad depan
+  for(let ix=-w/2+0.4;ix<=w/2-0.3;ix+=4){
+    const pil=new THREE.Mesh(new THREE.BoxGeometry(0.4,h,0.14),wallM);
+    pil.position.set(x+ix,h/2,z+d/2+0.05);scene.add(pil);
+  }
+  // Jendela 3 lapis: frame + kaca + sill (2 baris bila 2 lantai)
+  const winRows=h>5.5?[1.7,h-1.6]:[h/2+0.2];
+  winRows.forEach(function(wy){
+    for(let ix=-w/2+1.6; ix<w/2-1.2; ix+=2.4){
+      const fr=new THREE.Mesh(new THREE.BoxGeometry(1.3,1.5,0.1),bldFrameMat);
+      fr.position.set(x+ix,wy,z+d/2+0.03);scene.add(fr);
+      const win=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.3,0.06),bldGlassMat);
+      win.position.set(x+ix,wy,z+d/2+0.06);scene.add(win);
+      const sill=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.09,0.2),wallM);
+      sill.position.set(x+ix,wy-0.8,z+d/2+0.08);scene.add(sill);
+    }
+  });
+  // Pintu utama + canopy 2 tiang
+  const door=new THREE.Mesh(new THREE.BoxGeometry(1.6,2.3,0.1),
+    new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.7,map:PROC.wood(0x5D4037,0x2E1F16,76)}));
+  door.position.set(x,1.15,z+d/2+0.04);scene.add(door);
+  const canopy=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.1,1.2),bldFrameMat);
+  canopy.position.set(x,2.6,z+d/2+0.6);canopy.castShadow=true;scene.add(canopy);
+  [-1.1,1.1].forEach(function(dx){
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,2.6,10),bldFrameMat);
+    post.position.set(x+dx,1.3,z+d/2+1.1);scene.add(post);
+  });
+  // Signage: backing board + plane teks (bukan sprite)
+  const board=new THREE.Mesh(new THREE.BoxGeometry(6.4,1.3,0.12),
+    new THREE.MeshStandardMaterial({color:0x1B2A41,roughness:0.7}));
+  board.position.set(x,h+0.4,z+d/2+0.35);scene.add(board);
+  const sign=new THREE.Mesh(new THREE.PlaneGeometry(6.1,1.15),
+    new THREE.MeshBasicMaterial({map:signTexture(label||'GEDUNG SEKOLAH'),transparent:false}));
+  sign.position.set(x,h+0.4,z+d/2+0.42);scene.add(sign);
+}
+// Gedung Sekolah Utama (utara lab, 2 lantai)
+addSchoolBuilding(0,-16,28,10,7,0xEDE7D3,'SMA NEGERI 1');
 // Gedung Perpustakaan (timur)
-addSchoolBuilding(18,0,10,16,5,0xDCE5DD);
+addSchoolBuilding(19,0,10,16,5,0xDCE5DD,'PERPUSTAKAAN');
 // Gedung Kelas (barat)
-addSchoolBuilding(-18,2,12,14,5,0xF5F0E0);
+addSchoolBuilding(-19,2,12,14,5,0xF5F0E0,'GEDUNG KELAS');
 // Lapangan Upacara (selatan lab) - paving + tiang bendera
 const lapangan=new THREE.Mesh(new THREE.BoxGeometry(22,0.03,14),new THREE.MeshStandardMaterial({color:0xC9C0A5,roughness:0.9}));
 lapangan.position.set(2, -0.04, 12); lapangan.receiveShadow=true; scene.add(lapangan);
@@ -1674,15 +1779,116 @@ jalan.position.set(-8, -0.03, 0); jalan.receiveShadow=true; scene.add(jalan);
 const garis=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.01,28),new THREE.MeshStandardMaterial({color:0xF5F0E0}));
 garis.position.set(-8, -0.01, 0); scene.add(garis);
 
-for(let i=-20;i<=20;i+=2){[18,-18].forEach(function(zz){
-  const t=new THREE.Mesh(new THREE.BoxGeometry(0.08,2,0.08),fenceMat);
-  t.position.set(i,1,zz);scene.add(t);});}
-for(let i=-16;i<=16;i+=2){[20,-20].forEach(function(xx){
-  const t=new THREE.Mesh(new THREE.BoxGeometry(0.08,2,0.08),fenceMat);
-  t.position.set(xx,1,i);scene.add(t);});}
-[-18,18].forEach(function(zz){[0.5,1.5].forEach(function(y){
-  const r=new THREE.Mesh(new THREE.BoxGeometry(40,0.08,0.08),fenceMat);
-  r.position.set(0,y,zz);scene.add(r);});});
+// Pagar: tiang silinder + ujung runcing + 2 rel horizontal
+const postGeo=new THREE.CylinderGeometry(0.05,0.05,1.9,8);
+const tipGeo=new THREE.ConeGeometry(0.07,0.18,8);
+function fencePost(x,z){
+  const t=new THREE.Mesh(postGeo,fenceMat);
+  t.position.set(x,0.95,z);scene.add(t);
+  const tip=new THREE.Mesh(tipGeo,fenceMat);
+  tip.position.set(x,1.99,z);scene.add(tip);
+}
+for(let i=-20;i<=20;i+=2){fencePost(i,18);fencePost(i,-18);}
+for(let i=-16;i<=16;i+=2){fencePost(20,i);fencePost(-20,i);}
+const railGeoZ=new THREE.CylinderGeometry(0.035,0.035,40,8);
+const railGeoX=new THREE.CylinderGeometry(0.035,0.035,36,8);
+[-18,18].forEach(function(zz){[0.6,1.5].forEach(function(y){
+  const r=new THREE.Mesh(railGeoZ,fenceMat);
+  r.rotation.z=Math.PI/2;r.position.set(0,y,zz);scene.add(r);});});
+[-20,20].forEach(function(xx){[0.6,1.5].forEach(function(y){
+  const r=new THREE.Mesh(railGeoX,fenceMat);
+  r.rotation.x=Math.PI/2;r.position.set(xx,y,0);scene.add(r);});});
+// ---- Semak rendah di sepanjang pagar ----
+const shrubMat=new THREE.MeshStandardMaterial({color:0x3E6B34,roughness:0.95});
+const shrubGeo=new THREE.IcosahedronGeometry(0.5,0);
+for(let i=-19;i<=19;i+=2.5){
+  [[i,17.2],[i,-17.2]].forEach(function(p){
+    const s=new THREE.Mesh(shrubGeo,shrubMat);
+    s.scale.set(1,0.7,1);s.position.set(p[0],0.3,p[1]);s.castShadow=true;scene.add(s);
+  });
+}
+// ---- Pos satpam + gerbang (selatan) ----
+(function(){
+  const g=new THREE.Group();g.position.set(-4,0,19);scene.add(g);
+  const hut=new THREE.Mesh(new THREE.BoxGeometry(2.2,2.4,2.2),
+    new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.85,map:PROC.concrete(0xF5F0E0,77,2)}));
+  hut.position.y=1.2;hut.castShadow=true;g.add(hut);
+  const roof=new THREE.Mesh(new THREE.ConeGeometry(2.0,1.0,4),bldRoofMat);
+  roof.position.y=2.9;roof.rotation.y=Math.PI/4;roof.castShadow=true;g.add(roof);
+  const win=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.9,0.06),bldGlassMat);
+  win.position.set(0,1.5,1.12);g.add(win);
+  const gate1=new THREE.Mesh(new THREE.BoxGeometry(0.12,1.6,3),fenceMat);
+  gate1.position.set(-1.5,0.8,-2.5);scene.add(gate1);
+  const gate2=gate1.clone();gate2.position.x=2.5;scene.add(gate2);
+})();
+// ---- Parkir + marka (timur lapangan) ----
+(function(){
+  const park=new THREE.Mesh(new THREE.BoxGeometry(10,0.025,6),
+    new THREE.MeshStandardMaterial({color:0x5A5A5A,roughness:0.95}));
+  park.position.set(12,-0.03,12);park.receiveShadow=true;scene.add(park);
+  for(let i=0;i<5;i++){
+    const line=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.012,5.4),
+      new THREE.MeshStandardMaterial({color:0xF5F0E0}));
+    line.position.set(8+i*2,-0.015,12);scene.add(line);
+  }
+})();
+// ---- Lampu jalan (5 unit, emissive) ----
+const lampHeadMat=new THREE.MeshStandardMaterial({color:0xFFF6D8,emissive:0xFFE9A8,emissiveIntensity:1.2});
+[[-14,-8],[14,-8],[-14,8],[14,8],[2,17]].forEach(function(p){
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,4.5,10),fenceMat);
+  pole.position.set(p[0],2.25,p[1]);pole.castShadow=true;scene.add(pole);
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,1.0),fenceMat);
+  arm.position.set(p[0],4.4,p[1]+0.45);scene.add(arm);
+  const head=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.12,0.5),lampHeadMat);
+  head.position.set(p[0],4.32,p[1]+0.9);scene.add(head);
+});
+// ---- Tempat sampah (3 unit) + bangku taman (2 unit) ----
+[[-2,9],[8,9],[12,4]].forEach(function(p){
+  const bin=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.26,0.7,14),
+    new THREE.MeshStandardMaterial({color:0x2E5C3E,roughness:0.8}));
+  bin.position.set(p[0],0.35,p[1]);bin.castShadow=true;scene.add(bin);
+  const lid=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,0.08,14),fenceMat);
+  lid.position.set(p[0],0.74,p[1]);scene.add(lid);
+});
+[[-4,13.5],[8,13.5]].forEach(function(p){
+  const seat=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.08,0.45),
+    new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.7,map:PROC.wood(0x6E4B2E,0x3A2617,78)}));
+  seat.position.set(p[0],0.45,p[1]);seat.castShadow=true;scene.add(seat);
+  [-0.7,0.7].forEach(function(dx){
+    const leg=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.45,0.4),fenceMat);
+    leg.position.set(p[0]+dx,0.225,p[1]);scene.add(leg);
+  });
+});
+// ---- Papan nama sekolah 3D ----
+(function(){
+  [-2.2,2.2].forEach(function(dx){
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,2.6,10),fenceMat);
+    post.position.set(dx,1.3,20.5);post.castShadow=true;scene.add(post);
+  });
+  const bd=new THREE.Mesh(new THREE.BoxGeometry(5.2,1.1,0.12),
+    new THREE.MeshStandardMaterial({color:0x1B2A41,roughness:0.7}));
+  bd.position.set(0,2.3,20.5);bd.castShadow=true;scene.add(bd);
+  const tx=new THREE.Mesh(new THREE.PlaneGeometry(5.0,1.0),
+    new THREE.MeshBasicMaterial({map:signTexture('SMA NEGERI 1'),transparent:false}));
+  tx.position.set(0,2.3,20.57);scene.add(tx);
+})();
+// ---- Pot tanaman depan gedung utama ----
+[[-6,-10.2],[6,-10.2],[-2,-10.2],[2,-10.2]].forEach(function(p){
+  const pot=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.24,0.45,12),
+    new THREE.MeshStandardMaterial({color:0xA85B2A,roughness:0.85}));
+  pot.position.set(p[0],0.22,p[1]);pot.castShadow=true;scene.add(pot);
+  const bush=new THREE.Mesh(shrubGeo,shrubMat);
+  bush.scale.set(0.9,1.1,0.9);bush.position.set(p[0],0.85,p[1]);bush.castShadow=true;scene.add(bush);
+});
+// ---- Partikel debu halus di udara ----
+const dustGeo=new THREE.BufferGeometry();
+(function(){
+  const N=200,pos=new Float32Array(N*3),R=PROC.seededRandom(99);
+  for(let i=0;i<N;i++){pos[i*3]=(R()-0.5)*40;pos[i*3+1]=0.5+R()*5;pos[i*3+2]=(R()-0.5)*40;}
+  dustGeo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+})();
+const dust=new THREE.Points(dustGeo,new THREE.PointsMaterial({color:0xFFF8DC,size:0.06,transparent:true,opacity:0.35,depthWrite:false}));
+scene.add(dust);
 
 // ============== RUANG ==============
 const H=3.5,T=0.15;
@@ -1695,14 +1901,25 @@ const PLX=rPrep.x-rPrep.w/2, SLX=rStor.x-rStor.w/2;
 const PREP_BZ=rPrep.z-rPrep.d/2, PREP_FZ=rPrep.z+rPrep.d/2;
 const STOR_BZ=rStor.z-rStor.d/2, STOR_FZ=rStor.z+rStor.d/2;
 
-function addFloor(w,d,x,z,color){
-  const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),
-    new THREE.MeshStandardMaterial({color:color,roughness:0.6}));
+function addFloor(w,d,x,z,color,variant){
+  let mat;
+  if(variant==='prep'){
+    mat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.5,metalness:0.0,
+      map:PROC.tile(0xB9BFC4,0x7A7F85,4,61,Math.max(1,Math.round(w/2.4)),Math.max(1,Math.round(d/2.4)))});
+  }else if(variant==='stor'){
+    mat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.65,metalness:0.0,
+      map:PROC.wood(0x9A6B3F,0x5D3D1F,62,Math.max(1,Math.round(w/3)),Math.max(1,Math.round(d/3)))});
+  }else{
+    mat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.4,metalness:0.0,
+      map:PROC.tile(0xCFC5AB,0x8f866e,5,60,Math.max(1,Math.round(w/3.6)),Math.max(1,Math.round(d/3.6)))});
+  }
+  if(mat.map)mat.map.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),mat);
   f.position.set(x,-0.05,z);f.receiveShadow=true;scene.add(f);
 }
-addFloor(rP.w,rP.d,rP.x,rP.z,C.floor);
-addFloor(rPrep.w,rPrep.d,rPrep.x,rPrep.z,C.floor);
-addFloor(rStor.w,rStor.d,rStor.x,rStor.z,C.floor);
+addFloor(rP.w,rP.d,rP.x,rP.z,C.floor,'main');
+addFloor(rPrep.w,rPrep.d,rPrep.x,rPrep.z,C.floor,'prep');
+addFloor(rStor.w,rStor.d,rStor.x,rStor.z,C.floor,'stor');
 const ceilings=[];
 function addCeil(w,d,x,z){
   const c=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),
@@ -1713,10 +1930,15 @@ addCeil(rP.w,rP.d,rP.x,rP.z);
 addCeil(rPrep.w,rPrep.d,rPrep.x,rPrep.z);
 addCeil(rStor.w,rStor.d,rStor.x,rStor.z);
 
-const wallMat=new THREE.MeshStandardMaterial({color:C.wallIn,roughness:0.92,side:THREE.DoubleSide});
-const wallAcc=new THREE.MeshStandardMaterial({color:C.wallAcc,roughness:0.9,side:THREE.DoubleSide});
-const doorMat=new THREE.MeshStandardMaterial({color:C.doorWood,roughness:0.75});
-const doorGlass=new THREE.MeshStandardMaterial({color:C.glass,transparent:true,opacity:0.42,roughness:0.06,metalness:0.25});
+const wallMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.92,side:THREE.DoubleSide,
+  map:PROC.concrete(0xF2EDDD,63,6),bumpMap:PROC.concrete(0x808080,63,6),bumpScale:0.01});
+const wallAccMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9,side:THREE.DoubleSide,
+  map:PROC.concrete(0xDCE5DD,64,6)});
+const wallAcc=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9,side:THREE.DoubleSide,
+  map:PROC.concrete(0xDCE5DD,64,6)});
+const doorMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.7,metalness:0.0,
+  map:PROC.wood(0x6E4B2E,0x3A2617,65,1,2)});
+const doorGlass=new THREE.MeshPhysicalMaterial({color:0xCFE0E8,transparent:true,opacity:0.42,roughness:0.06,metalness:0.1,transmission:0.6,ior:1.5});
 
 function wall(x,y,z,w,h,d,mat){
   const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat||wallMat);
@@ -1918,8 +2140,8 @@ const WALL_MAX_DIST=2.5;
 const SUPPORT_HOSTS={
   'table':{levels:[0.80],hx:0.90,hz:0.45,label:'meja praktikum'},
   'teacher-desk':{levels:[0.76],hx:0.80,hz:0.40,label:'meja guru'},
-  'cabinet':{levels:[1.80],hx:0.45,hz:0.225,label:'lemari'},
-  'cabinet-glass':{levels:[0.5075,0.9075,1.3075,1.70],hx:0.42,hz:0.19,label:'lemari kaca'}
+  'cabinet':{levels:[1.85],hx:0.45,hz:0.225,label:'lemari'},
+  'cabinet-glass':{levels:[0.5075,0.9075,1.3075,1.75],hx:0.42,hz:0.19,label:'lemari kaca'}
 };
 // Alat kecil yg boleh ditaruh di atas permukaan penopang.
 const TABLETOP_TOOLS=['tube-rack','beaker-set','microscope','bunsen','flask','scale','stand','cylinder'];
@@ -1936,7 +2158,11 @@ const PHYS={
       label:o.label||'benda',itemKey:o.itemKey||null,
       type:o.type||'tool',adhesive:o.adhesive||'floor',
       stuck:false,stuckSurface:null,rotY:mesh.rotation.y||0};
-    this.bodies.push(b);return b;
+    this.bodies.push(b);
+    if(o.itemKey&&CONTACT_ITEMS.indexOf(o.itemKey)>=0&&o.aabb){
+      addContactShadow(mesh,Math.max(o.aabb.w,o.aabb.d)*0.72);
+    }
+    return b;
   },
   step(dt){
     for(let i=0;i<this.bodies.length;i++){
@@ -2085,19 +2311,21 @@ const PHYS={
 
 // ============== MATERIAL LIBRARY (Gemini gallery — premium) ==============
 const materials={
-  chrome:new THREE.MeshStandardMaterial({color:0xeeeeee,metalness:0.95,roughness:0.1}),
-  brushedSteel:new THREE.MeshStandardMaterial({color:0x94a3b8,metalness:0.8,roughness:0.3}),
-  castIron:new THREE.MeshStandardMaterial({color:0x1e293b,metalness:0.6,roughness:0.8}),
-  brass:new THREE.MeshStandardMaterial({color:0xd97706,metalness:0.9,roughness:0.2}),
-  plasticWhite:new THREE.MeshStandardMaterial({color:0xf8fafc,roughness:0.3,metalness:0.05}),
+  chrome:new THREE.MeshStandardMaterial({color:0xeeeeee,metalness:0.95,roughness:0.12,map:PROC.brushed(0xeeeeee,22),bumpMap:PROC.brushed(0x888888,22),bumpScale:0.008}),
+  brushedSteel:new THREE.MeshStandardMaterial({color:0x94a3b8,metalness:0.85,roughness:0.35,map:PROC.brushed(0x94a3b8,21),bumpMap:PROC.brushed(0x888888,21),bumpScale:0.01}),
+  castIron:new THREE.MeshStandardMaterial({color:0x1e293b,metalness:0.6,roughness:0.8,map:PROC.concrete(0x1e293b,31)}),
+  brass:new THREE.MeshStandardMaterial({color:0xd97706,metalness:0.9,roughness:0.25,map:PROC.brushed(0xd97706,23)}),
+  plasticWhite:new THREE.MeshStandardMaterial({color:0xf8fafc,roughness:0.35,metalness:0.05,map:PROC.concrete(0xf8fafc,32)}),
   plasticBlack:new THREE.MeshStandardMaterial({color:0x0f172a,roughness:0.5,metalness:0.1}),
   plasticYellow:new THREE.MeshStandardMaterial({color:0xeab308,roughness:0.3,metalness:0.1}),
   plasticGreen:new THREE.MeshStandardMaterial({color:0x16a34a,roughness:0.4,metalness:0.05}),
   plasticRed:new THREE.MeshStandardMaterial({color:0xdc2626,roughness:0.3,metalness:0.1}),
-  rubberDark:new THREE.MeshStandardMaterial({color:0x1e1e24,roughness:0.9,metalness:0.0}),
-  woodDark:new THREE.MeshStandardMaterial({color:0x78350f,roughness:0.6,metalness:0.0}),
-  woodLight:new THREE.MeshStandardMaterial({color:0xd97706,roughness:0.5,metalness:0.0}),
-  epoxyTableTop:new THREE.MeshStandardMaterial({color:0x0f172a,roughness:0.2,metalness:0.1}),
+  rubberDark:new THREE.MeshStandardMaterial({color:0x1e1e24,roughness:0.95,metalness:0.0,map:PROC.fabric(0x1e1e24,41),bumpMap:PROC.fabric(0x808080,41),bumpScale:0.012}),
+  fabricNavy:new THREE.MeshStandardMaterial({color:0x2E4A6B,roughness:0.95,metalness:0.0,map:PROC.fabric(0x2E4A6B,42),bumpMap:PROC.fabric(0x808080,42),bumpScale:0.012}),
+  fabricGreen:new THREE.MeshStandardMaterial({color:0x2E5C3E,roughness:0.95,metalness:0.0,map:PROC.fabric(0x2E5C3E,43)}),
+  woodDark:new THREE.MeshStandardMaterial({color:0x78350f,roughness:0.65,metalness:0.0,map:PROC.wood(0x78350f,0x3d2412,11),bumpMap:PROC.wood(0x808080,0x333333,11),bumpScale:0.015}),
+  woodLight:new THREE.MeshStandardMaterial({color:0xd97706,roughness:0.6,metalness:0.0,map:PROC.wood(0xd97706,0x7c3f0c,12),bumpMap:PROC.wood(0x808080,0x333333,12),bumpScale:0.015}),
+  epoxyTableTop:new THREE.MeshStandardMaterial({color:0x0f172a,roughness:0.25,metalness:0.1,map:PROC.concrete(0x141c2e,33)}),
   glassClear:new THREE.MeshPhysicalMaterial({color:0xffffff,metalness:0.05,roughness:0.05,transmission:0.95,ior:1.52,thickness:0.04,transparent:true,side:THREE.DoubleSide}),
   glassFrosted:new THREE.MeshPhysicalMaterial({color:0xffffff,metalness:0.1,roughness:0.4,transmission:0.8,ior:1.5,transparent:true}),
   liquidBlue:new THREE.MeshPhysicalMaterial({color:0x0284c7,transmission:0.9,ior:1.33,transparent:true,opacity:0.9}),
@@ -2109,6 +2337,168 @@ const materials={
   liquidYellow:new THREE.MeshPhysicalMaterial({color:0xeab308,transmission:0.9,ior:1.33,transparent:true,opacity:0.9})
 };
 
+// ============== PROCEDURAL TOOLKIT (PROC): tekstur canvas, cached, deterministik ==============
+// Semua map dibuat prosedural (tanpa file eksternal), file tetap 1 HTML.
+const PROC=(function(){
+  const cache=new Map();
+  function seededRandom(seed){
+    let s=(seed>>>0)||1;
+    return function(){
+      s^=s<<13;s>>>=0;s^=s>>>17;s^=s<<5;s>>>=0;
+      return (s>>>0)/4294967296;
+    };
+  }
+  function cv(s){const c=document.createElement('canvas');c.width=c.height=s;return [c,c.getContext('2d')];}
+  function tex(c,rx,ry){
+    const t=new THREE.CanvasTexture(c);
+    t.wrapS=t.wrapT=THREE.RepeatWrapping;
+    t.repeat.set(rx||1,ry||1);
+    t.anisotropy=4;t.encoding=THREE.sRGBEncoding;
+    return t;
+  }
+  function hex(h){return '#'+h.toString(16).padStart(6,'0');}
+  function shade(h,f){
+    const r=Math.min(255,((h>>16)&255)*f)|0,
+      g=Math.min(255,((h>>8)&255)*f)|0,
+      b=Math.min(255,(h&255)*f)|0;
+    return 'rgb('+r+','+g+','+b+')';
+  }
+  function get(key,fn){if(cache.has(key))return cache.get(key);const v=fn();cache.set(key,v);return v;}
+  function wood(baseHex,grainHex,seed,repX,repY){
+    return get('wood'+baseHex+'_'+grainHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
+      x.strokeStyle=hex(grainHex);
+      for(let i=0;i<90;i++){
+        x.globalAlpha=0.06+R()*0.12;
+        x.lineWidth=0.5+R()*1.8;
+        const y0=R()*512;
+        x.beginPath();x.moveTo(-10,y0);
+        x.bezierCurveTo(150,y0+(R()-0.5)*26,340,y0+(R()-0.5)*26,522,y0+(R()-0.5)*12);
+        x.stroke();
+      }
+      x.globalAlpha=0.05;
+      for(let i=0;i<400;i++){x.fillStyle=R()>0.5?'#000':'#fff';x.fillRect(R()*512,R()*512,1.5,1.5);}
+      x.globalAlpha=1;
+      return tex(c,repX||1,repY||1);
+    });
+  }
+  function tile(baseHex,groutHex,n,seed,repX,repY){
+    return get('tile'+baseHex+'_'+groutHex+'_'+n+'_'+seed,function(){
+      const R=seededRandom(seed),S=512,o=cv(S),c=o[0],x=o[1];
+      x.fillStyle=hex(groutHex);x.fillRect(0,0,S,S);
+      const t=S/n;
+      for(let j=0;j<n;j++)for(let i=0;i<n;i++){
+        x.fillStyle=shade(baseHex,0.94+R()*0.12);
+        x.fillRect(i*t+2,j*t+2,t-4,t-4);
+        x.fillStyle='rgba(255,255,255,0.06)';
+        x.fillRect(i*t+2,j*t+2,t-4,3);
+        for(let k=0;k<14;k++){x.fillStyle='rgba(0,0,0,0.04)';x.fillRect(i*t+R()*t,j*t+R()*t,1.4,1.4);}
+      }
+      return tex(c,repX||1,repY||1);
+    });
+  }
+  function concrete(baseHex,seed,rep){
+    return get('conc'+baseHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
+      for(let i=0;i<5200;i++){
+        x.fillStyle=R()>0.5?'rgba(0,0,0,0.05)':'rgba(255,255,255,0.05)';
+        const s=1+R()*2.2;
+        x.fillRect(R()*512,R()*512,s,s);
+      }
+      return tex(c,rep||1,rep||1);
+    });
+  }
+  function fabric(baseHex,seed,rep){
+    return get('fab'+baseHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(256),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,256,256);
+      for(let j=0;j<256;j+=3)for(let i=0;i<256;i+=3){
+        x.fillStyle=((i+j)%6===0)?'rgba(0,0,0,0.10)':'rgba(255,255,255,0.06)';
+        x.fillRect(i,j,2,2);
+      }
+      for(let i=0;i<300;i++){x.fillStyle='rgba(0,0,0,0.05)';x.fillRect(R()*256,R()*256,1,1);}
+      return tex(c,rep||1,rep||1);
+    });
+  }
+  function brushed(baseHex,seed,rep){
+    return get('bru'+baseHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(256),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,256,256);
+      for(let i=0;i<700;i++){
+        x.strokeStyle=R()>0.5?'rgba(255,255,255,0.07)':'rgba(0,0,0,0.07)';
+        x.lineWidth=1;
+        const px=R()*256;
+        x.beginPath();x.moveTo(px,0);x.lineTo(px+(R()-0.5)*6,256);x.stroke();
+      }
+      return tex(c,rep||1,rep||1);
+    });
+  }
+  function chalkboard(baseHex,seed){
+    return get('chalk'+baseHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
+      for(let i=0;i<26;i++){
+        const gx=R()*512,gy=R()*512,gr=20+R()*70;
+        const g=x.createRadialGradient(gx,gy,0,gx,gy,gr);
+        g.addColorStop(0,'rgba(255,255,255,0.05)');
+        g.addColorStop(1,'rgba(255,255,255,0)');
+        x.fillStyle=g;x.beginPath();x.arc(gx,gy,gr,0,7);x.fill();
+      }
+      x.strokeStyle='rgba(255,255,255,0.10)';x.lineWidth=2;
+      for(let i=0;i<4;i++){
+        x.beginPath();
+        const yy=80+R()*350;
+        x.moveTo(40,yy);
+        x.bezierCurveTo(180,yy+(R()-0.5)*30,340,yy+(R()-0.5)*30,470,yy);
+        x.stroke();
+      }
+      return tex(c,1,1);
+    });
+  }
+  function ground(baseHex,varyHex,seed,rep){
+    return get('gnd'+baseHex+'_'+varyHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
+      for(let i=0;i<40;i++){
+        const gx=R()*512,gy=R()*512,gr=24+R()*80;
+        const g=x.createRadialGradient(gx,gy,0,gx,gy,gr);
+        g.addColorStop(0,hex(varyHex));
+        g.addColorStop(1,'rgba(0,0,0,0)');
+        x.globalAlpha=0.16;x.fillStyle=g;
+        x.beginPath();x.arc(gx,gy,gr,0,7);x.fill();
+      }
+      x.globalAlpha=1;
+      for(let i=0;i<2600;i++){x.fillStyle=R()>0.5?'rgba(0,0,0,0.06)':'rgba(255,255,255,0.05)';x.fillRect(R()*512,R()*512,1.6,1.6);}
+      return tex(c,rep||1,rep||1);
+    });
+  }
+  let _shadowTex=null;
+  function shadowTex(){
+    if(_shadowTex)return _shadowTex;
+    const o=cv(128),c=o[0],x=o[1];
+    const g=x.createRadialGradient(64,64,4,64,64,64);
+    g.addColorStop(0,'rgba(0,0,0,0.42)');
+    g.addColorStop(0.7,'rgba(0,0,0,0.18)');
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=g;x.fillRect(0,0,128,128);
+    _shadowTex=new THREE.CanvasTexture(c);
+    return _shadowTex;
+  }
+  return {seededRandom:seededRandom,wood:wood,tile:tile,concrete:concrete,
+    fabric:fabric,brushed:brushed,chalkboard:chalkboard,ground:ground,shadowTex:shadowTex};
+})();
+// Contact shadow tiruan di bawah furnitur besar (1 plane, murah).
+function addContactShadow(group,radius){
+  if(!group||group.userData.contact)return;
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(radius*2,radius*2),
+    new THREE.MeshBasicMaterial({map:PROC.shadowTex(),transparent:true,depthWrite:false}));
+  m.rotation.x=-Math.PI/2;m.position.y=0.012;m.renderOrder=1;
+  group.add(m);group.userData.contact=true;
+}
+const CONTACT_ITEMS=['table','teacher-desk','cabinet','cabinet-glass','sink-unit','chair','spill','eyewash'];
+
 // ============== MAKERS ==============
 function simpleBoxMat(c,r){return new THREE.MeshStandardMaterial({color:c,roughness:r});}
 
@@ -2117,10 +2507,33 @@ const MAKERS={
     const g=new THREE.Group();
     const top=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.08,0.9),materials.epoxyTableTop);
     top.position.y=0.76;top.castShadow=true;top.receiveShadow=true;g.add(top);
+    // List Atas (edge trim, siluet terbaca)
+    const trim=new THREE.Mesh(new THREE.BoxGeometry(1.84,0.025,0.94),materials.brushedSteel);
+    trim.position.y=0.715;g.add(trim);
+    // Apron 8cm di bawah top
+    const apron=new THREE.Mesh(new THREE.BoxGeometry(1.64,0.08,0.74),materials.brushedSteel);
+    apron.position.y=0.66;apron.castShadow=true;g.add(apron);
+    // Kaki tapered (silinder)
     const frameMat=materials.brushedSteel;
-    [[-0.85,0.38,-0.4],[0.85,0.38,-0.4],[-0.85,0.38,0.4],[0.85,0.38,0.4]].forEach(function(pos){
-      const leg=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.72,0.06),frameMat);
-      leg.position.set(pos[0],pos[1],pos[2]);leg.castShadow=true;g.add(leg);
+    [[-0.82,-0.37],[0.82,-0.37],[-0.82,0.37],[0.82,0.37]].forEach(function(p){
+      const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.048,0.62,12),frameMat);
+      leg.position.set(p[0],0.31,p[1]);leg.castShadow=true;g.add(leg);
+      const foot=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.06,0.03,12),materials.rubberDark);
+      foot.position.set(p[0],0.015,p[1]);g.add(foot);
+    });
+    // Cross-brace horizontal (X-frame sederhana: 2 sisi + 1 tengah)
+    [-0.37,0.37].forEach(function(z){
+      const brace=new THREE.Mesh(new THREE.BoxGeometry(1.64,0.04,0.03),frameMat);
+      brace.position.set(0,0.18,z);g.add(brace);
+    });
+    const braceC=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.04,0.74),frameMat);
+    braceC.position.set(0,0.18,0);g.add(braceC);
+    // 2 drawer kecil di bawah top
+    [-0.45,0.45].forEach(function(x){
+      const dr=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.12,0.6),materials.woodDark);
+      dr.position.set(x,0.56,0);dr.castShadow=true;g.add(dr);
+      const h=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.12,10),materials.chrome);
+      h.rotation.z=Math.PI/2;h.position.set(x,0.56,0.32);g.add(h);
     });
     const outletBox=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.08,0.12),materials.plasticWhite);
     outletBox.position.set(0,0.84,0);g.add(outletBox);
@@ -2129,13 +2542,24 @@ const MAKERS={
   'chair':{label:'Kursi lab',type:'furniture',aabb:{w:0.5,h:0.6,d:0.5},make:function(){
     const g=new THREE.Group();
     const seat=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,0.04,32),materials.rubberDark);
-    seat.position.y=0.55;seat.castShadow=true;g.add(seat);
-    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.5,16),materials.chrome);
-    pole.position.y=0.28;g.add(pole);
+    seat.position.y=0.53;seat.castShadow=true;g.add(seat);
+    // Bantalan kain (torus + alas)
+    const cushion=new THREE.Mesh(new THREE.TorusGeometry(0.125,0.032,12,28),materials.fabricNavy);
+    cushion.rotation.x=Math.PI/2;cushion.position.y=0.555;cushion.castShadow=true;g.add(cushion);
+    const pad=new THREE.Mesh(new THREE.CylinderGeometry(0.125,0.125,0.025,28),materials.fabricNavy);
+    pad.position.y=0.555;g.add(pad);
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.48,16),materials.chrome);
+    pole.position.y=0.27;g.add(pole);
     const ring=new THREE.Mesh(new THREE.TorusGeometry(0.18,0.012,12,24),materials.chrome);
     ring.rotation.x=Math.PI/2;ring.position.y=0.2;g.add(ring);
     const base=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.24,0.04,5),materials.castIron);
-    base.position.y=0.03;g.add(base);
+    base.position.y=0.05;g.add(base);
+    // Roda (5 buah di ujung kaki bintang)
+    for(let i=0;i<5;i++){
+      const a=(i/5)*Math.PI*2+Math.PI/5;
+      const w=new THREE.Mesh(new THREE.SphereGeometry(0.028,10,10),materials.rubberDark);
+      w.position.set(Math.cos(a)*0.215,0.028,Math.sin(a)*0.215);g.add(w);
+    }
     return g;
   }},
   'teacher-desk':{label:'Meja guru',type:'furniture',aabb:{w:1.6,h:0.8,d:0.8},make:function(){
@@ -2154,25 +2578,57 @@ const MAKERS={
   }},
   'cabinet':{label:'Lemari penyimpanan',type:'furniture',aabb:{w:0.9,h:1.9,d:0.5},make:function(){
     const g=new THREE.Group();
-    const body=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.8,0.45),materials.brushedSteel);
-    body.position.y=0.9;body.castShadow=true;g.add(body);
-    const doorSplit=new THREE.Mesh(new THREE.BoxGeometry(0.005,1.74,0.01),materials.plasticBlack);
-    doorSplit.position.set(0,0.9,0.226);g.add(doorSplit);
-    [-0.04,0.04].forEach(function(x){
-      const h=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.18,12),materials.chrome);
-      h.position.set(x,0.9,0.24);g.add(h);
+    // Plinth (alas inset 6cm)
+    const plinth=new THREE.Mesh(new THREE.BoxGeometry(0.82,0.06,0.39),materials.castIron);
+    plinth.position.y=0.03;g.add(plinth);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.74,0.45),materials.brushedSteel);
+    body.position.y=0.93;body.castShadow=true;g.add(body);
+    // Cornice (mahkota atas)
+    const cornice=new THREE.Mesh(new THREE.BoxGeometry(0.94,0.05,0.49),materials.brushedSteel);
+    cornice.position.y=1.825;cornice.castShadow=true;g.add(cornice);
+    // Daun pintu recess (2 panel)
+    [-0.2225,0.2225].forEach(function(x){
+      const door=new THREE.Mesh(new THREE.BoxGeometry(0.42,1.62,0.02),materials.brushedSteel);
+      door.position.set(x,0.93,0.222);g.add(door);
+      const inset=new THREE.Mesh(new THREE.BoxGeometry(0.34,1.5,0.008),materials.castIron);
+      inset.position.set(x,0.93,0.232);g.add(inset);
+    });
+    const doorSplit=new THREE.Mesh(new THREE.BoxGeometry(0.008,1.66,0.012),materials.plasticBlack);
+    doorSplit.position.set(0,0.93,0.228);g.add(doorSplit);
+    // Handle horizontal (silinder)
+    [-0.07,0.07].forEach(function(x){
+      const h=new THREE.Mesh(new THREE.CylinderGeometry(0.009,0.009,0.13,12),materials.chrome);
+      h.rotation.z=Math.PI/2;h.position.set(x,1.0,0.245);g.add(h);
+      [-0.055,0.055].forEach(function(dx){
+        const post=new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.006,0.025,8),materials.chrome);
+        post.rotation.x=Math.PI/2;post.position.set(x+dx,1.0,0.235);g.add(post);
+      });
     });
     return g;
   }},
   'cabinet-glass':{label:'Lemari kaca',type:'furniture',aabb:{w:0.9,h:1.8,d:0.5},make:function(){
     const g=new THREE.Group();
+    const plinth=new THREE.Mesh(new THREE.BoxGeometry(0.82,0.06,0.39),materials.castIron);
+    plinth.position.y=0.03;g.add(plinth);
     const frame=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.7,0.45),materials.brushedSteel);
     frame.position.y=0.85;frame.castShadow=true;g.add(frame);
+    const cornice=new THREE.Mesh(new THREE.BoxGeometry(0.94,0.05,0.49),materials.brushedSteel);
+    cornice.position.y=1.725;cornice.castShadow=true;g.add(cornice);
     const glassFront=new THREE.Mesh(new THREE.BoxGeometry(0.82,1.5,0.02),materials.glassClear);
     glassFront.position.set(0,0.9,0.22);g.add(glassFront);
+    const glassSideL=new THREE.Mesh(new THREE.BoxGeometry(0.02,1.5,0.4),materials.glassClear);
+    glassSideL.position.set(-0.43,0.9,0);g.add(glassSideL);
+    const glassSideR=glassSideL.clone();glassSideR.position.x=0.43;g.add(glassSideR);
     [0.5,0.9,1.3].forEach(function(y){
       const shelf=new THREE.Mesh(new THREE.BoxGeometry(0.84,0.015,0.38),materials.glassClear);
       shelf.position.set(0,y,0);g.add(shelf);
+      const lip=new THREE.Mesh(new THREE.BoxGeometry(0.84,0.02,0.015),materials.brushedSteel);
+      lip.position.set(0,y+0.012,0.185);g.add(lip);
+    });
+    // Handle horizontal ganda
+    [-0.06,0.06].forEach(function(x){
+      const h=new THREE.Mesh(new THREE.CylinderGeometry(0.009,0.009,0.12,12),materials.chrome);
+      h.rotation.z=Math.PI/2;h.position.set(x,0.95,0.245);g.add(h);
     });
     return g;
   }},
@@ -2180,28 +2636,60 @@ const MAKERS={
     const g=new THREE.Group();
     const cabinet=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.8,0.6),materials.plasticWhite);
     cabinet.position.y=0.4;cabinet.castShadow=true;g.add(cabinet);
+    // Pintu kabinet + handle
+    const door=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.6,0.02),materials.plasticWhite);
+    door.position.set(0,0.38,0.305);g.add(door);
+    const knob=new THREE.Mesh(new THREE.SphereGeometry(0.018,12,12),materials.chrome);
+    knob.position.set(0.18,0.38,0.32);g.add(knob);
     const top=new THREE.Mesh(new THREE.BoxGeometry(0.74,0.05,0.64),materials.brushedSteel);
     top.position.y=0.825;g.add(top);
-    const basin=new THREE.Mesh(new THREE.BoxGeometry(0.48,0.25,0.4),materials.castIron);
-    basin.position.set(0,0.7,0);g.add(basin);
-    const faucetCurve=new THREE.Mesh(new THREE.TorusGeometry(0.1,0.012,12,24,Math.PI),materials.chrome);
-    faucetCurve.position.set(0,1.05,-0.15);faucetCurve.rotation.y=Math.PI/2;g.add(faucetCurve);
-    const faucetStem=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.2,16),materials.chrome);
-    faucetStem.position.set(0,0.95,-0.05);g.add(faucetStem);
+    // Basin silinder open-ended + dasar
+    const basinWall=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.19,0.22,24,1,true),materials.brushedSteel);
+    basinWall.position.set(0,0.71,0);g.add(basinWall);
+    const basinBottom=new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.19,0.02,24),materials.brushedSteel);
+    basinBottom.position.set(0,0.61,0);g.add(basinBottom);
+    // Backsplash vertikal 15cm
+    const splash=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.15,0.03),materials.plasticWhite);
+    splash.position.set(0,0.925,-0.29);g.add(splash);
+    // Faucet 2-piece: batang + kepala melengkung
+    const faucetStem=new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.016,0.24,16),materials.chrome);
+    faucetStem.position.set(0,0.97,-0.22);faucetStem.castShadow=true;g.add(faucetStem);
+    const faucetHead=new THREE.Mesh(new THREE.TorusGeometry(0.09,0.012,12,20,Math.PI*0.62),materials.chrome);
+    faucetHead.position.set(0,1.06,-0.13);faucetHead.rotation.y=Math.PI/2;faucetHead.rotation.z=0.35;g.add(faucetHead);
+    const knobH=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.03,12),materials.plasticRed);
+    knobH.position.set(0.07,0.87,-0.22);g.add(knobH);
+    const knobC=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.03,12),materials.plasticGreen);
+    knobC.position.set(-0.07,0.87,-0.22);g.add(knobC);
     return g;
   }},
   'board':{label:'Papan tulis',type:'furniture',aabb:{w:1.9,h:1.5,d:0.1},make:function(){
     const g=new THREE.Group();
-    const board=new THREE.Mesh(new THREE.BoxGeometry(1.8,1.0,0.02),materials.plasticWhite);
+    const chalkMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9,metalness:0.0,map:PROC.chalkboard(0x24422E,51)});
+    const board=new THREE.Mesh(new THREE.BoxGeometry(1.8,1.0,0.02),chalkMat);
     board.position.y=1.3;board.castShadow=true;g.add(board);
-    const frame=new THREE.Mesh(new THREE.BoxGeometry(1.84,1.04,0.03),materials.brushedSteel);
-    frame.position.y=1.3;frame.position.z=-0.005;g.add(frame);
+    // Frame 4 sisi terpisah (kayu mahoni)
+    const frameMat=materials.woodDark;
+    const railT=new THREE.Mesh(new THREE.BoxGeometry(1.88,0.045,0.045),frameMat);
+    railT.position.set(0,1.815,0);railT.castShadow=true;g.add(railT);
+    const railB=new THREE.Mesh(new THREE.BoxGeometry(1.88,0.045,0.045),frameMat);
+    railB.position.set(0,0.785,0);g.add(railB);
+    [-0.92,0.92].forEach(function(x){
+      const rail=new THREE.Mesh(new THREE.BoxGeometry(0.045,1.075,0.045),frameMat);
+      rail.position.set(x,1.3,0);g.add(rail);
+    });
+    // Baki kapur + 2 penyangga segitiga
     const tray=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.02,0.08),materials.brushedSteel);
-    tray.position.set(0,0.79,0.04);g.add(tray);
+    tray.position.set(0,0.75,0.06);g.add(tray);
+    [-0.26,0.26].forEach(function(x){
+      const bracket=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.09,0.02),materials.brushedSteel);
+      bracket.position.set(x,0.71,0.045);bracket.rotation.x=0.35;g.add(bracket);
+    });
     const marker1=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.12,12),materials.plasticRed);
-    marker1.rotation.z=Math.PI/2;marker1.position.set(-0.1,0.81,0.04);g.add(marker1);
+    marker1.rotation.z=Math.PI/2;marker1.position.set(-0.1,0.77,0.06);g.add(marker1);
     const marker2=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.12,12),materials.plasticBlack);
-    marker2.rotation.z=Math.PI/2;marker2.position.set(0.1,0.81,0.04);g.add(marker2);
+    marker2.rotation.z=Math.PI/2;marker2.position.set(0.1,0.77,0.06);g.add(marker2);
+    const eraser=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.035,0.05),materials.woodLight);
+    eraser.position.set(0.22,0.775,0.06);g.add(eraser);
     return g;
   }},
   'tube-rack':{label:'Rak tabung reaksi',type:'tool',aabb:{w:0.32,h:0.16,d:0.12},make:function(){
@@ -2259,32 +2747,66 @@ const MAKERS={
     const g=new THREE.Group();
     const tank=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,0.45,24),materials.plasticRed);
     tank.position.y=0.255;tank.castShadow=true;g.add(tank);
+    // Sabuk pengikat + label
+    const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.082,0.082,0.03,24),materials.rubberDark);
+    belt.position.y=0.32;g.add(belt);
     const valve=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.05,0.04),materials.chrome);
     valve.position.y=0.505;g.add(valve);
-    const gauge=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.01,12),materials.brass);
-    gauge.rotation.x=Math.PI/2;gauge.position.set(0,0.51,0.025);g.add(gauge);
+    // Handle tuas (2 bilah)
+    const lever1=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.012,0.02),materials.chrome);
+    lever1.position.set(0.03,0.535,0);lever1.rotation.z=0.12;g.add(lever1);
+    const lever2=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.012,0.02),materials.castIron);
+    lever2.position.set(0.03,0.522,0);lever2.rotation.z=-0.08;g.add(lever2);
+    const gauge=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,0.012,12),materials.brass);
+    gauge.rotation.x=Math.PI/2;gauge.position.set(0,0.51,0.028);g.add(gauge);
+    const gaugeFace=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.014,12),materials.plasticWhite);
+    gaugeFace.rotation.x=Math.PI/2;gaugeFace.position.set(0,0.51,0.028);g.add(gaugeFace);
     const hose=new THREE.Mesh(new THREE.TorusGeometry(0.08,0.008,12,16,Math.PI),materials.rubberDark);
     hose.position.set(0.06,0.38,0);hose.rotation.z=-Math.PI/2;g.add(hose);
+    // Nozzle di ujung selang
+    const nozzle=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.016,0.07,12),materials.plasticBlack);
+    nozzle.position.set(0.06,0.27,0.02);nozzle.rotation.x=0.25;g.add(nozzle);
     return g;
   }},
   'p3k':{label:'Kotak P3K',type:'safety',aabb:{w:0.4,h:0.5,d:0.15},make:function(){
     const g=new THREE.Group();
     const box=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.45,0.12),materials.plasticWhite);
     box.position.y=0.225;box.castShadow=true;g.add(box);
-    const vCross=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.005),materials.plasticRed);
-    vCross.position.set(0,0.225,0.063);g.add(vCross);
-    const hCross=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.04,0.005),materials.plasticRed);
-    hCross.position.set(0,0.225,0.063);g.add(hCross);
+    // Bingkai tutup
+    const lid=new THREE.Mesh(new THREE.BoxGeometry(0.33,0.43,0.012),materials.plasticWhite);
+    lid.position.set(0,0.225,0.058);g.add(lid);
+    const vCross=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.006),materials.plasticRed);
+    vCross.position.set(0,0.225,0.066);g.add(vCross);
+    const hCross=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.04,0.006),materials.plasticRed);
+    hCross.position.set(0,0.225,0.066);g.add(hCross);
+    // Engsel kiri (2 silinder kecil)
+    [0.12,0.33].forEach(function(y){
+      const hinge=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.03,10),materials.brushedSteel);
+      hinge.position.set(-0.175,y,0.05);g.add(hinge);
+    });
+    // Kunci + lubang kunci kanan
+    const lock=new THREE.Mesh(new THREE.BoxGeometry(0.025,0.05,0.015),materials.brushedSteel);
+    lock.position.set(0.175,0.225,0.058);g.add(lock);
+    const keyhole=new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.006,0.018,8),materials.plasticBlack);
+    keyhole.rotation.x=Math.PI/2;keyhole.position.set(0.175,0.225,0.06);g.add(keyhole);
     return g;
   }},
   'blanket':{label:'Selimut api',type:'safety',aabb:{w:0.25,h:0.4,d:0.1},make:function(){
     const g=new THREE.Group();
     const caseBox=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.35,0.06),materials.plasticRed);
     caseBox.position.y=0.2;caseBox.castShadow=true;g.add(caseBox);
+    // Gulungan selimut silinder di lubang bawah
+    const roll=new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.028,0.16,16),materials.fabricGreen);
+    roll.rotation.z=Math.PI/2;roll.position.set(0,0.045,0.005);g.add(roll);
     [-0.04,0.04].forEach(function(x){
-      const strap=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.1,0.002),materials.rubberDark);
-      strap.position.set(x,0.0,0.02);g.add(strap);
+      const strap=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.1,0.004),materials.rubberDark);
+      strap.position.set(x,0.0,0.028);g.add(strap);
+      const tab=new THREE.Mesh(new THREE.SphereGeometry(0.011,10,10),materials.plasticWhite);
+      tab.position.set(x,-0.045,0.028);g.add(tab);
     });
+    // Label api kecil
+    const flameLbl=new THREE.Mesh(new THREE.PlaneGeometry(0.07,0.07),materials.plasticWhite);
+    flameLbl.position.set(0,0.27,0.031);g.add(flameLbl);
     return g;
   }},
   'spill':{label:'Spill kit',type:'safety',aabb:{w:0.45,h:0.55,d:0.45},make:function(){
@@ -3900,7 +4422,7 @@ const lampVal=document.getElementById('lampVal');
 function setLights(pct){
   const f=pct/100;
   ambient.intensity=0.55*f;sun.intensity=1.05*f;hemi.intensity=0.42*f;
-  for(let i=0;i<labLights.length;i++)labLights[i].intensity=0.55*f;
+  for(let i=0;i<labLights.length;i++)labLights[i].intensity=0.8*f;
   lampVal.textContent=pct;
 }
 lampSlider.addEventListener('input',function(e){
@@ -4073,6 +4595,7 @@ function drawMM(){
 // =============================================================
 const clock=new THREE.Clock();
 let mmTick=0;
+let fpsFrames=0,fpsLast=performance.now();
 const stampEl=document.getElementById('stampTime');
 const footEl=document.getElementById('footerTime');
 const topTimeEl=document.getElementById('topTime');
@@ -4160,6 +4683,16 @@ function animate(){
 
   mmTick+=dt;
   if(mmTick>1/24){mmTick=0;drawMM();}
+
+  // Debu melayang pelan + FPS meter
+  if(typeof dust!=='undefined'){dust.rotation.y+=dt*0.008;}
+  fpsFrames++;
+  const nowMs=performance.now();
+  if(nowMs-fpsLast>1000){
+    const el=document.getElementById('fps');
+    if(el)el.textContent=Math.round(fpsFrames*1000/(nowMs-fpsLast))+' FPS';
+    fpsFrames=0;fpsLast=nowMs;
+  }
 
   const cam=(camMode==='top')?orthoCam:camera;
   renderer.render(scene,cam);
