@@ -49,7 +49,24 @@ function peersPublic(room) {
   return out;
 }
 
-function joinRoom(socket, room, name, isHost) {
+// Avatar config dari client — sanitasi ketat sebelum disimpan/broadcast
+function sanitizeAvatar(a) {
+  if (!a || typeof a !== 'object') return null;
+  const out = {};
+  const hex = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) ? v : null;
+  const str = (v, max) => (typeof v === 'string' && v.length <= max && /^[A-Za-z0-9_# ]+$/.test(v)) ? v : null;
+  const skin = hex(a.skinColor); if (skin) out.skinColor = skin;
+  const hair = hex(a.hairColor); if (hair) out.hairColor = hair;
+  const eye = hex(a.eyeColor); if (eye) out.eyeColor = eye;
+  const coat = hex(a.coatColor); if (coat) out.coatColor = coat;
+  const hs = str(a.hairstyle, 32); if (hs) out.hairstyle = hs;
+  const ew = str(a.eyewear, 32); if (ew) out.eyewear = ew;
+  const st = str(a.suitType, 32); if (st) out.suitType = st;
+  const sn = str(a.skinName, 32); if (sn) out.skinName = sn;
+  return Object.keys(out).length ? out : null;
+}
+
+function joinRoom(socket, room, name, isHost, avatar) {
   socket.join(room.code);
   socket.data.roomCode = room.code;
 
@@ -61,6 +78,7 @@ function joinRoom(socket, room, name, isHost) {
     color: color,
     isHost: !!isHost,
     voice: false,
+    avatar: sanitizeAvatar(avatar),
     x: 1, y: 1.6, z: 6, rotY: 0
   };
   room.peers.set(socket.id, presence);
@@ -118,7 +136,7 @@ io.on('connection', (socket) => {
         peers: new Map()
       };
       rooms.set(code, room);
-      joinRoom(socket, room, data.name, true);
+      joinRoom(socket, room, data.name, true, data.avatar);
       console.log('[ROOM+]', code, 'by', socket.id);
       cb && cb({ ok: true, code: code });
     } catch (e) {
@@ -135,7 +153,7 @@ io.on('connection', (socket) => {
       if (room.peers.size >= room.maxPlayers) {
         return cb && cb({ ok: false, error: 'Room penuh (' + room.peers.size + '/' + room.maxPlayers + ').' });
       }
-      joinRoom(socket, room, data.name, false);
+      joinRoom(socket, room, data.name, false, data.avatar);
       console.log('[ROOM~]', code, 'joined by', socket.id, '(' + room.peers.size + '/' + room.maxPlayers + ')');
       cb && cb({ ok: true, code: code });
     } catch (e) {
