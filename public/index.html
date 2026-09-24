@@ -341,21 +341,27 @@ body {
 @keyframes gameFadeIn{from{opacity:0}to{opacity:1}}
 #game-frame{position:absolute;inset:0;width:100%;height:100%;border:0;
   background:#0F1620}
-#game-hud{position:absolute;top:0;left:0;right:0;z-index:82;
-  display:flex;align-items:center;gap:8px;padding:10px 12px;
-  pointer-events:none}
-#game-hud .hud-pill{pointer-events:auto;background:var(--paper-hi);
-  border:1.5px solid var(--ink);box-shadow:var(--shadow-hard);
-  padding:6px 12px;font-family:'JetBrains Mono',monospace;font-size:11px;
-  font-weight:700;letter-spacing:.1em}
+#game-hud{position:absolute;top:64px;right:12px;left:auto;z-index:82;
+  display:flex;align-items:center;gap:6px;padding:7px 9px;
+  max-width:min(460px,calc(100vw - 24px));flex-wrap:wrap;
+  pointer-events:none;background:var(--paper-hi);
+  border:1.5px solid var(--ink);box-shadow:var(--shadow-hard)}
+#game-hud .hud-pill{pointer-events:auto;background:transparent;
+  border:none;box-shadow:none;
+  padding:2px 4px;font-family:'JetBrains Mono',monospace;font-size:11px;
+  font-weight:700;letter-spacing:.08em;white-space:nowrap;
+  max-width:150px;overflow:hidden;text-overflow:ellipsis}
 #game-hud button{pointer-events:auto}
+#game-hud .hud-actions{display:flex;gap:6px;align-items:center}
+#game-hud.hud-collapsed .hud-pill,#game-hud.hud-collapsed .hud-actions{display:none}
 #pause-menu{position:absolute;inset:0;z-index:83;display:none;
   place-items:center;background:rgba(26,26,26,.45)}
 #pause-menu.show{display:grid}
 @keyframes shakeX{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
 .shake{animation:shakeX .1s ease-out 2}
 @media (max-width:768px){
-  #game-hud{flex-wrap:wrap}
+  #game-hud{top:60px;right:8px;padding:5px 7px;gap:4px}
+  #game-hud .hud-pill{font-size:10px;max-width:104px}
   #game-loading .load-box{padding:20px}
 }
 @media (prefers-reduced-motion:reduce){
@@ -844,13 +850,15 @@ body {
 <div id="game-layer" aria-label="Game LabIPA">
   <iframe id="game-frame" title="LabIPA Game" allow="camera; microphone; fullscreen"></iframe>
   <div id="game-hud">
+    <button id="hud-toggle" onclick="toggleHud()" class="btn-ghost px-2 py-1 text-xs" title="Sembunyikan/tampilkan info">▾</button>
     <span class="hud-pill" id="hud-room">SOLO</span>
     <span class="hud-pill" id="hud-user">—</span>
     <span class="hud-pill" id="hud-players">👥 1</span>
     <span class="hud-pill" id="hud-mic">🎤 OFF</span>
-    <span style="flex:1"></span>
-    <button onclick="togglePauseMenu(true)" class="btn-ghost px-3 py-1.5 text-xs" style="background:var(--paper-hi)">Pause</button>
-    <button onclick="exitToStudio()" class="btn-ink px-3 py-1.5 text-xs">Keluar</button>
+    <span class="hud-actions">
+      <button onclick="togglePauseMenu(true)" class="btn-ghost px-3 py-1.5 text-xs" style="background:var(--paper-hi)">Pause</button>
+      <button onclick="exitToStudio()" class="btn-ink px-3 py-1.5 text-xs">Keluar</button>
+    </span>
   </div>
   <div id="pause-menu">
     <div class="paper-panel p-6 text-center" style="width:min(360px,calc(100vw - 48px))">
@@ -1912,6 +1920,14 @@ function togglePauseMenu(show) {
   const m = document.getElementById('pause-menu');
   if (!m) return;
   m.classList.toggle('show', !!show);
+}
+// Mini-bar HUD bisa dilipat agar tidak menutupi tombol/info game di bawahnya.
+function toggleHud() {
+  const h = document.getElementById('game-hud');
+  if (!h) return;
+  const collapsed = h.classList.toggle('hud-collapsed');
+  const t = document.getElementById('hud-toggle');
+  if (t) t.textContent = collapsed ? '▸' : '▾';
 }
 function exitToStudio(skipConfirm) {
   if (!skipConfirm) {

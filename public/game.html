@@ -48,7 +48,9 @@ canvas{display:block}
   padding:0 14px;gap:12px;
   color:var(--chrome-fg);
   box-shadow:0 2px 8px rgba(0,0,0,.5);
+  overflow-x:auto;scrollbar-width:none;
 }
+#topbar::-webkit-scrollbar{display:none}
 #topbar .brand{display:flex;align-items:center;gap:10px;flex-shrink:0}
 #topbar .brand .logo{
   width:36px;height:36px;border-radius:8px;
@@ -165,7 +167,7 @@ canvas{display:block}
    INSPECTOR
    ================================================== */
 #inspector{
-  position:absolute;top:14px;right:14px;z-index:22;
+  position:absolute;top:66px;right:14px;z-index:22;
   width:300px;max-width:calc(100% - 28px);
   background:var(--paper);
   border:1px solid var(--ink);
@@ -318,7 +320,7 @@ canvas{display:block}
 #hint .txt{color:var(--chrome-fg)}
 
 #placeHint{
-  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  position:absolute;top:66px;left:50%;transform:translateX(-50%);
   z-index:16;
   background:var(--paper-hi);border:1px solid var(--ink);
   border-left:3px solid var(--safety);
@@ -855,7 +857,7 @@ canvas{display:block}
 /* ==================================================
    MULTIPLAYER IN-GAME PANEL
    ================================================== */
-#mpPanel{position:absolute;top:14px;right:14px;z-index:20;width:200px;
+#mpPanel{position:absolute;top:66px;right:14px;z-index:20;width:200px;
   background:var(--paper);border:1px solid var(--ink);
   box-shadow:4px 4px 0 var(--ink), 0 8px 24px rgba(0,0,0,.45);display:none}
 #mpPanel.on{display:block}
@@ -899,6 +901,8 @@ canvas{display:block}
   #topbar .brand .title .tag{display:none}
   .tb-btn span.lbl-txt{display:none}
   .tb-btn{padding:0 9px}
+  #topbar{gap:8px;padding:0 10px}
+  #topbar .time{display:none}
   #inspector{width:260px}
   #minimap{width:170px;height:170px}
   #minimap canvas{width:170px;height:146px}
