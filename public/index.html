@@ -1574,6 +1574,169 @@ const C={
   steel:0x8E9AA3,brass:0xB8892B,board:0x24422E,woodDark:0x4B3A2A
 };
 
+// ============== PROCEDURAL TOOLKIT (PROC): tekstur canvas, cached, deterministik ==============
+// Semua map dibuat prosedural (tanpa file eksternal), file tetap 1 HTML.
+const PROC=(function(){
+  const cache=new Map();
+  function seededRandom(seed){
+    let s=(seed>>>0)||1;
+    return function(){
+      s^=s<<13;s>>>=0;s^=s>>>17;s^=s<<5;s>>>=0;
+      return (s>>>0)/4294967296;
+    };
+  }
+  function cv(s){const c=document.createElement('canvas');c.width=c.height=s;return [c,c.getContext('2d')];}
+  function tex(c,rx,ry){
+    const t=new THREE.CanvasTexture(c);
+    t.wrapS=t.wrapT=THREE.RepeatWrapping;
+    t.repeat.set(rx||1,ry||1);
+    t.anisotropy=4;t.encoding=THREE.sRGBEncoding;
+    return t;
+  }
+  function hex(h){return '#'+h.toString(16).padStart(6,'0');}
+  function shade(h,f){
+    const r=Math.min(255,((h>>16)&255)*f)|0,
+      g=Math.min(255,((h>>8)&255)*f)|0,
+      b=Math.min(255,(h&255)*f)|0;
+    return 'rgb('+r+','+g+','+b+')';
+  }
+  function get(key,fn){if(cache.has(key))return cache.get(key);const v=fn();cache.set(key,v);return v;}
+  function wood(baseHex,grainHex,seed,repX,repY){
+    return get('wood'+baseHex+'_'+grainHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
+      x.strokeStyle=hex(grainHex);
+      for(let i=0;i<90;i++){
+        x.globalAlpha=0.06+R()*0.12;
+        x.lineWidth=0.5+R()*1.8;
+        const y0=R()*512;
+        x.beginPath();x.moveTo(-10,y0);
+        x.bezierCurveTo(150,y0+(R()-0.5)*26,340,y0+(R()-0.5)*26,522,y0+(R()-0.5)*12);
+        x.stroke();
+      }
+      x.globalAlpha=0.05;
+      for(let i=0;i<400;i++){x.fillStyle=R()>0.5?'#000':'#fff';x.fillRect(R()*512,R()*512,1.5,1.5);}
+      x.globalAlpha=1;
+      return tex(c,repX||1,repY||1);
+    });
+  }
+  function tile(baseHex,groutHex,n,seed,repX,repY){
+    return get('tile'+baseHex+'_'+groutHex+'_'+n+'_'+seed,function(){
+      const R=seededRandom(seed),S=512,o=cv(S),c=o[0],x=o[1];
+      x.fillStyle=hex(groutHex);x.fillRect(0,0,S,S);
+      const t=S/n;
+      for(let j=0;j<n;j++)for(let i=0;i<n;i++){
+        x.fillStyle=shade(baseHex,0.94+R()*0.12);
+        x.fillRect(i*t+2,j*t+2,t-4,t-4);
+        x.fillStyle='rgba(255,255,255,0.06)';
+        x.fillRect(i*t+2,j*t+2,t-4,3);
+        for(let k=0;k<14;k++){x.fillStyle='rgba(0,0,0,0.04)';x.fillRect(i*t+R()*t,j*t+R()*t,1.4,1.4);}
+      }
+      return tex(c,repX||1,repY||1);
+    });
+  }
+  function concrete(baseHex,seed,rep){
+    return get('conc'+baseHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
+      for(let i=0;i<5200;i++){
+        x.fillStyle=R()>0.5?'rgba(0,0,0,0.05)':'rgba(255,255,255,0.05)';
+        const s=1+R()*2.2;
+        x.fillRect(R()*512,R()*512,s,s);
+      }
+      return tex(c,rep||1,rep||1);
+    });
+  }
+  function fabric(baseHex,seed,rep){
+    return get('fab'+baseHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(256),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,256,256);
+      for(let j=0;j<256;j+=3)for(let i=0;i<256;i+=3){
+        x.fillStyle=((i+j)%6===0)?'rgba(0,0,0,0.10)':'rgba(255,255,255,0.06)';
+        x.fillRect(i,j,2,2);
+      }
+      for(let i=0;i<300;i++){x.fillStyle='rgba(0,0,0,0.05)';x.fillRect(R()*256,R()*256,1,1);}
+      return tex(c,rep||1,rep||1);
+    });
+  }
+  function brushed(baseHex,seed,rep){
+    return get('bru'+baseHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(256),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,256,256);
+      for(let i=0;i<700;i++){
+        x.strokeStyle=R()>0.5?'rgba(255,255,255,0.07)':'rgba(0,0,0,0.07)';
+        x.lineWidth=1;
+        const px=R()*256;
+        x.beginPath();x.moveTo(px,0);x.lineTo(px+(R()-0.5)*6,256);x.stroke();
+      }
+      return tex(c,rep||1,rep||1);
+    });
+  }
+  function chalkboard(baseHex,seed){
+    return get('chalk'+baseHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
+      for(let i=0;i<26;i++){
+        const gx=R()*512,gy=R()*512,gr=20+R()*70;
+        const g=x.createRadialGradient(gx,gy,0,gx,gy,gr);
+        g.addColorStop(0,'rgba(255,255,255,0.05)');
+        g.addColorStop(1,'rgba(255,255,255,0)');
+        x.fillStyle=g;x.beginPath();x.arc(gx,gy,gr,0,7);x.fill();
+      }
+      x.strokeStyle='rgba(255,255,255,0.10)';x.lineWidth=2;
+      for(let i=0;i<4;i++){
+        x.beginPath();
+        const yy=80+R()*350;
+        x.moveTo(40,yy);
+        x.bezierCurveTo(180,yy+(R()-0.5)*30,340,yy+(R()-0.5)*30,470,yy);
+        x.stroke();
+      }
+      return tex(c,1,1);
+    });
+  }
+  function ground(baseHex,varyHex,seed,rep){
+    return get('gnd'+baseHex+'_'+varyHex+'_'+seed,function(){
+      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
+      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
+      for(let i=0;i<40;i++){
+        const gx=R()*512,gy=R()*512,gr=24+R()*80;
+        const g=x.createRadialGradient(gx,gy,0,gx,gy,gr);
+        g.addColorStop(0,hex(varyHex));
+        g.addColorStop(1,'rgba(0,0,0,0)');
+        x.globalAlpha=0.16;x.fillStyle=g;
+        x.beginPath();x.arc(gx,gy,gr,0,7);x.fill();
+      }
+      x.globalAlpha=1;
+      for(let i=0;i<2600;i++){x.fillStyle=R()>0.5?'rgba(0,0,0,0.06)':'rgba(255,255,255,0.05)';x.fillRect(R()*512,R()*512,1.6,1.6);}
+      return tex(c,rep||1,rep||1);
+    });
+  }
+  let _shadowTex=null;
+  function shadowTex(){
+    if(_shadowTex)return _shadowTex;
+    const o=cv(128),c=o[0],x=o[1];
+    const g=x.createRadialGradient(64,64,4,64,64,64);
+    g.addColorStop(0,'rgba(0,0,0,0.42)');
+    g.addColorStop(0.7,'rgba(0,0,0,0.18)');
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=g;x.fillRect(0,0,128,128);
+    _shadowTex=new THREE.CanvasTexture(c);
+    return _shadowTex;
+  }
+  return {seededRandom:seededRandom,wood:wood,tile:tile,concrete:concrete,
+    fabric:fabric,brushed:brushed,chalkboard:chalkboard,ground:ground,shadowTex:shadowTex};
+})();
+// Contact shadow tiruan di bawah furnitur besar (1 plane, murah).
+function addContactShadow(group,radius){
+  if(!group||group.userData.contact)return;
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(radius*2,radius*2),
+    new THREE.MeshBasicMaterial({map:PROC.shadowTex(),transparent:true,depthWrite:false}));
+  m.rotation.x=-Math.PI/2;m.position.y=0.012;m.renderOrder=1;
+  group.add(m);group.userData.contact=true;
+}
+const CONTACT_ITEMS=['table','teacher-desk','cabinet','cabinet-glass','sink-unit','chair','spill','eyewash'];
+
+
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(C.sky);
 scene.fog=new THREE.FogExp2(0xBACBD0,0.008);
@@ -1932,8 +2095,6 @@ addCeil(rStor.w,rStor.d,rStor.x,rStor.z);
 
 const wallMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.92,side:THREE.DoubleSide,
   map:PROC.concrete(0xF2EDDD,63,6),bumpMap:PROC.concrete(0x808080,63,6),bumpScale:0.01});
-const wallAccMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9,side:THREE.DoubleSide,
-  map:PROC.concrete(0xDCE5DD,64,6)});
 const wallAcc=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9,side:THREE.DoubleSide,
   map:PROC.concrete(0xDCE5DD,64,6)});
 const doorMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.7,metalness:0.0,
@@ -2337,167 +2498,6 @@ const materials={
   liquidYellow:new THREE.MeshPhysicalMaterial({color:0xeab308,transmission:0.9,ior:1.33,transparent:true,opacity:0.9})
 };
 
-// ============== PROCEDURAL TOOLKIT (PROC): tekstur canvas, cached, deterministik ==============
-// Semua map dibuat prosedural (tanpa file eksternal), file tetap 1 HTML.
-const PROC=(function(){
-  const cache=new Map();
-  function seededRandom(seed){
-    let s=(seed>>>0)||1;
-    return function(){
-      s^=s<<13;s>>>=0;s^=s>>>17;s^=s<<5;s>>>=0;
-      return (s>>>0)/4294967296;
-    };
-  }
-  function cv(s){const c=document.createElement('canvas');c.width=c.height=s;return [c,c.getContext('2d')];}
-  function tex(c,rx,ry){
-    const t=new THREE.CanvasTexture(c);
-    t.wrapS=t.wrapT=THREE.RepeatWrapping;
-    t.repeat.set(rx||1,ry||1);
-    t.anisotropy=4;t.encoding=THREE.sRGBEncoding;
-    return t;
-  }
-  function hex(h){return '#'+h.toString(16).padStart(6,'0');}
-  function shade(h,f){
-    const r=Math.min(255,((h>>16)&255)*f)|0,
-      g=Math.min(255,((h>>8)&255)*f)|0,
-      b=Math.min(255,(h&255)*f)|0;
-    return 'rgb('+r+','+g+','+b+')';
-  }
-  function get(key,fn){if(cache.has(key))return cache.get(key);const v=fn();cache.set(key,v);return v;}
-  function wood(baseHex,grainHex,seed,repX,repY){
-    return get('wood'+baseHex+'_'+grainHex+'_'+seed,function(){
-      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
-      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
-      x.strokeStyle=hex(grainHex);
-      for(let i=0;i<90;i++){
-        x.globalAlpha=0.06+R()*0.12;
-        x.lineWidth=0.5+R()*1.8;
-        const y0=R()*512;
-        x.beginPath();x.moveTo(-10,y0);
-        x.bezierCurveTo(150,y0+(R()-0.5)*26,340,y0+(R()-0.5)*26,522,y0+(R()-0.5)*12);
-        x.stroke();
-      }
-      x.globalAlpha=0.05;
-      for(let i=0;i<400;i++){x.fillStyle=R()>0.5?'#000':'#fff';x.fillRect(R()*512,R()*512,1.5,1.5);}
-      x.globalAlpha=1;
-      return tex(c,repX||1,repY||1);
-    });
-  }
-  function tile(baseHex,groutHex,n,seed,repX,repY){
-    return get('tile'+baseHex+'_'+groutHex+'_'+n+'_'+seed,function(){
-      const R=seededRandom(seed),S=512,o=cv(S),c=o[0],x=o[1];
-      x.fillStyle=hex(groutHex);x.fillRect(0,0,S,S);
-      const t=S/n;
-      for(let j=0;j<n;j++)for(let i=0;i<n;i++){
-        x.fillStyle=shade(baseHex,0.94+R()*0.12);
-        x.fillRect(i*t+2,j*t+2,t-4,t-4);
-        x.fillStyle='rgba(255,255,255,0.06)';
-        x.fillRect(i*t+2,j*t+2,t-4,3);
-        for(let k=0;k<14;k++){x.fillStyle='rgba(0,0,0,0.04)';x.fillRect(i*t+R()*t,j*t+R()*t,1.4,1.4);}
-      }
-      return tex(c,repX||1,repY||1);
-    });
-  }
-  function concrete(baseHex,seed,rep){
-    return get('conc'+baseHex+'_'+seed,function(){
-      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
-      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
-      for(let i=0;i<5200;i++){
-        x.fillStyle=R()>0.5?'rgba(0,0,0,0.05)':'rgba(255,255,255,0.05)';
-        const s=1+R()*2.2;
-        x.fillRect(R()*512,R()*512,s,s);
-      }
-      return tex(c,rep||1,rep||1);
-    });
-  }
-  function fabric(baseHex,seed,rep){
-    return get('fab'+baseHex+'_'+seed,function(){
-      const R=seededRandom(seed),o=cv(256),c=o[0],x=o[1];
-      x.fillStyle=hex(baseHex);x.fillRect(0,0,256,256);
-      for(let j=0;j<256;j+=3)for(let i=0;i<256;i+=3){
-        x.fillStyle=((i+j)%6===0)?'rgba(0,0,0,0.10)':'rgba(255,255,255,0.06)';
-        x.fillRect(i,j,2,2);
-      }
-      for(let i=0;i<300;i++){x.fillStyle='rgba(0,0,0,0.05)';x.fillRect(R()*256,R()*256,1,1);}
-      return tex(c,rep||1,rep||1);
-    });
-  }
-  function brushed(baseHex,seed,rep){
-    return get('bru'+baseHex+'_'+seed,function(){
-      const R=seededRandom(seed),o=cv(256),c=o[0],x=o[1];
-      x.fillStyle=hex(baseHex);x.fillRect(0,0,256,256);
-      for(let i=0;i<700;i++){
-        x.strokeStyle=R()>0.5?'rgba(255,255,255,0.07)':'rgba(0,0,0,0.07)';
-        x.lineWidth=1;
-        const px=R()*256;
-        x.beginPath();x.moveTo(px,0);x.lineTo(px+(R()-0.5)*6,256);x.stroke();
-      }
-      return tex(c,rep||1,rep||1);
-    });
-  }
-  function chalkboard(baseHex,seed){
-    return get('chalk'+baseHex+'_'+seed,function(){
-      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
-      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
-      for(let i=0;i<26;i++){
-        const gx=R()*512,gy=R()*512,gr=20+R()*70;
-        const g=x.createRadialGradient(gx,gy,0,gx,gy,gr);
-        g.addColorStop(0,'rgba(255,255,255,0.05)');
-        g.addColorStop(1,'rgba(255,255,255,0)');
-        x.fillStyle=g;x.beginPath();x.arc(gx,gy,gr,0,7);x.fill();
-      }
-      x.strokeStyle='rgba(255,255,255,0.10)';x.lineWidth=2;
-      for(let i=0;i<4;i++){
-        x.beginPath();
-        const yy=80+R()*350;
-        x.moveTo(40,yy);
-        x.bezierCurveTo(180,yy+(R()-0.5)*30,340,yy+(R()-0.5)*30,470,yy);
-        x.stroke();
-      }
-      return tex(c,1,1);
-    });
-  }
-  function ground(baseHex,varyHex,seed,rep){
-    return get('gnd'+baseHex+'_'+varyHex+'_'+seed,function(){
-      const R=seededRandom(seed),o=cv(512),c=o[0],x=o[1];
-      x.fillStyle=hex(baseHex);x.fillRect(0,0,512,512);
-      for(let i=0;i<40;i++){
-        const gx=R()*512,gy=R()*512,gr=24+R()*80;
-        const g=x.createRadialGradient(gx,gy,0,gx,gy,gr);
-        g.addColorStop(0,hex(varyHex));
-        g.addColorStop(1,'rgba(0,0,0,0)');
-        x.globalAlpha=0.16;x.fillStyle=g;
-        x.beginPath();x.arc(gx,gy,gr,0,7);x.fill();
-      }
-      x.globalAlpha=1;
-      for(let i=0;i<2600;i++){x.fillStyle=R()>0.5?'rgba(0,0,0,0.06)':'rgba(255,255,255,0.05)';x.fillRect(R()*512,R()*512,1.6,1.6);}
-      return tex(c,rep||1,rep||1);
-    });
-  }
-  let _shadowTex=null;
-  function shadowTex(){
-    if(_shadowTex)return _shadowTex;
-    const o=cv(128),c=o[0],x=o[1];
-    const g=x.createRadialGradient(64,64,4,64,64,64);
-    g.addColorStop(0,'rgba(0,0,0,0.42)');
-    g.addColorStop(0.7,'rgba(0,0,0,0.18)');
-    g.addColorStop(1,'rgba(0,0,0,0)');
-    x.fillStyle=g;x.fillRect(0,0,128,128);
-    _shadowTex=new THREE.CanvasTexture(c);
-    return _shadowTex;
-  }
-  return {seededRandom:seededRandom,wood:wood,tile:tile,concrete:concrete,
-    fabric:fabric,brushed:brushed,chalkboard:chalkboard,ground:ground,shadowTex:shadowTex};
-})();
-// Contact shadow tiruan di bawah furnitur besar (1 plane, murah).
-function addContactShadow(group,radius){
-  if(!group||group.userData.contact)return;
-  const m=new THREE.Mesh(new THREE.PlaneGeometry(radius*2,radius*2),
-    new THREE.MeshBasicMaterial({map:PROC.shadowTex(),transparent:true,depthWrite:false}));
-  m.rotation.x=-Math.PI/2;m.position.y=0.012;m.renderOrder=1;
-  group.add(m);group.userData.contact=true;
-}
-const CONTACT_ITEMS=['table','teacher-desk','cabinet','cabinet-glass','sink-unit','chair','spill','eyewash'];
 
 // ============== MAKERS ==============
 function simpleBoxMat(c,r){return new THREE.MeshStandardMaterial({color:c,roughness:r});}
