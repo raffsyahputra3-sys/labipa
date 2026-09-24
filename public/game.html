@@ -3931,6 +3931,23 @@ function mpNotifyParent(payload){
     }
   }catch(e){}
 }
+// Lobby lama → lobby baru: kirim ringkasan sesi (pemain, host, mic) ke HUD studio.
+// Dipanggil tiap render daftar pemain (±1Hz) + tiap perubahan voice. Ringan (JSON kecil).
+function mpPostStateToParent(){
+  try{
+    if(!MP.handoffMode)return; // standalone: tak ada parent HUD
+    const players=[];
+    MP.peers.forEach(function(pres,sid){
+      players.push({name:pres.username||'Pemain',isHost:!!pres.isHost,
+        voice:!!pres.voice,speaking:VOICE.speakingPeers.has(sid)});
+    });
+    mpNotifyParent({type:'labipa-mp-state',
+      code:MP.code||null,formatted:MP.code?mpFormatRoom(MP.code):null,
+      count:MP.peers.size+(MP.code?1:0),max:MP.maxPlayers||0,
+      isHost:!!MP.isHost,players:players,
+      mic:!!VOICE.capturing,speakingLocal:!!VOICE.speakingLocal});
+  }catch(e){}
+}
 
 // ---------- BOOT: connect socket ----------
 (function mpBoot(){
@@ -4023,7 +4040,9 @@ function mpNotifyParent(payload){
     mpApplyRemoteWorldState(state.items||[]);
 
     document.getElementById('mpRoomCode').textContent=mpFormatRoom(MP.code);
-    document.getElementById('mpPanel').classList.add('on');
+    // Alur overlay (lobby baru): JANGAN tampilkan panel MP lama di dalam game.
+    // Kode/pemain/voice sudah diteruskan ke HUD studio via postMessage.
+    if(!MP.handoffMode){document.getElementById('mpPanel').classList.add('on');}
     appStarted=true;updateCover();setCamMode('orbit');
     mpRenderPlayerList();
     showToast('Masuk room '+mpFormatRoom(MP.code)+(MP.isHost?' (host)':''));
@@ -4477,6 +4496,7 @@ function mpRenderPlayerList(){
   el.innerHTML=html;
   const codeEl=document.getElementById('mpRoomCode');
   if(codeEl)codeEl.textContent=mpFormatRoom(MP.code)+' · '+(MP.peers.size+1)+'/'+MP.maxPlayers;
+  mpPostStateToParent();
 }
 
 // ---------- PER-FRAME TICK — low-latency (20Hz presence) ----------
@@ -5514,6 +5534,10 @@ document.getElementById('btnStart').addEventListener('click',function(e){
 
   var mode=(qp('mode')||'').toLowerCase();
   if(mode==='solo'||mode==='create'||mode==='join'){
+    // Lobby BARU (studio) yang pegang kendali: tandai mode handoff agar
+    // lobby LAMA di dalam game (cover + panel MP) tidak muncul di alur overlay.
+    // Standalone (buka /game.html langsung, tanpa param) tetap pakai lobby lama sebagai fallback.
+    try{MP.handoffMode=mode;}catch(e){}
     if(mode==='create'){
       var mx=parseInt(qp('max'),10);
       if(mx>=2&&mx<=8){var sel=document.getElementById('mpCreateMax');if(sel)sel.value=String(mx);}

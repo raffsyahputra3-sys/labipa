@@ -846,6 +846,8 @@ body {
   <div id="game-hud">
     <span class="hud-pill" id="hud-room">SOLO</span>
     <span class="hud-pill" id="hud-user">—</span>
+    <span class="hud-pill" id="hud-players">👥 1</span>
+    <span class="hud-pill" id="hud-mic">🎤 OFF</span>
     <span style="flex:1"></span>
     <button onclick="togglePauseMenu(true)" class="btn-ghost px-3 py-1.5 text-xs" style="background:var(--paper-hi)">Pause</button>
     <button onclick="exitToStudio()" class="btn-ink px-3 py-1.5 text-xs">Keluar</button>
@@ -1994,6 +1996,19 @@ window.addEventListener('message', function (e) {
     } else if (d.type === 'labipa-exit') {
       // User klik Keluar di dalam game (sudah confirm di sana) → tutup overlay.
       exitToStudio(true);
+    } else if (d.type === 'labipa-mp-state') {
+      // Fungsi lobby lama yang pindah ke baru: pemain, host, mic tampil di HUD studio.
+      try {
+        const hp = document.getElementById('hud-players');
+        if (hp) hp.textContent = '👥 ' + (d.count || 1) + (d.max ? '/' + d.max : '');
+        const hm = document.getElementById('hud-mic');
+        if (hm) hm.textContent = d.mic ? (d.speakingLocal ? '🎙 BICARA' : '🎙 ON') : '🎤 OFF';
+        if (Array.isArray(d.players)) {
+          roomState.players = [{ name: studioNet.playerName || 'Host', host: !!d.isHost }]
+            .concat(d.players.map(p => ({ name: p.name, host: !!p.isHost })));
+          renderRoomPlayers();
+        }
+      } catch (err) {}
     }
   } catch (err) {}
 });
