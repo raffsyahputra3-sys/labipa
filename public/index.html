@@ -1159,10 +1159,20 @@ div[data-mppanel="solo"] .cover-cta{
     </div>
 
     <div class="mp-panel on" data-mppanel="solo">
-      <button class="cover-cta" id="btnStart" type="button">
-        <span>Masuk Ruang Praktik</span>
-        <span class="arrow">→</span>
-      </button>
+      <div class="mp-field">
+        <label for="mpSoloName">Nama kamu (opsional)</label>
+        <input type="text" id="mpSoloName" maxlength="16" placeholder="mis. Arina/Rafi">
+      </div>
+      <div id="avatarChip" class="mp-avail" style="margin:0 0 12px">Avatar 3D: belum dikustom — <a href="avatar.html" style="color:inherit;font-weight:700">buka Avatar Studio →</a></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="cover-cta" id="btnStart" type="button">
+          <span>Masuk Ruang Praktik</span>
+          <span class="arrow">→</span>
+        </button>
+        <a class="cover-cta" href="avatar.html" style="text-decoration:none;background:var(--paper);color:var(--ink);border:2px solid var(--ink);box-shadow:4px 4px 0 var(--ink)">
+          <span>🎨 Avatar 3D</span>
+        </a>
+      </div>
       <audio id="sfxStamp" preload="auto">
         <source src="stamp.wav" type="audio/wav">
       </audio>
@@ -4776,10 +4786,69 @@ document.getElementById('btnStart').addEventListener('click',function(e){
   }else{
     playFallbackStamp();
   }
+  var soloNm=document.getElementById('mpSoloName');
+  if(soloNm&&soloNm.value.trim()){MP.username=soloNm.value.trim().slice(0,16);}
+  try{localStorage.setItem('labipa_player',JSON.stringify({name:MP.username||'Pemain'}));}catch(_){}
   appStarted=true;
   updateCover();
   setCamMode('orbit');
 });
+
+// =============================================================
+// AVATAR STUDIO HANDOFF (?mode=solo|create|join&name=..&max=..&code=..)
+// Dikirim dari public/avatar.html — otomatis isi nama & mulai.
+// =============================================================
+(function(){
+  function qp(n){try{return new URL(location.href).searchParams.get(n)||'';}catch(e){return '';}}
+  var savedPlayer=null,savedAvatar=null;
+  try{savedPlayer=JSON.parse(localStorage.getItem('labipa_player')||'null');}catch(e){}
+  try{savedAvatar=JSON.parse(localStorage.getItem('labipa_avatar')||'null');}catch(e){}
+
+  var handoffName=(qp('name')||((savedPlayer&&savedPlayer.name)||'')).trim().slice(0,16);
+  if(handoffName){
+    ['mpSoloName','mpCreateName','mpJoinName'].forEach(function(id){
+      var el=document.getElementById(id);
+      if(el&&!el.value)el.value=handoffName;
+    });
+  }
+
+  // Ringkasan avatar tersimpan di cover (data dari Avatar Studio, aman: enum internal)
+  var chip=document.getElementById('avatarChip');
+  if(chip&&savedAvatar){
+    var bits=[];
+    if(savedAvatar.skinName)bits.push(String(savedAvatar.skinName).slice(0,24));
+    if(savedAvatar.hairstyle)bits.push(String(savedAvatar.hairstyle).replace(/_/g,' ').slice(0,24));
+    if(savedAvatar.suitType)bits.push(String(savedAvatar.suitType).replace(/_/g,' ').slice(0,24));
+    chip.innerHTML='Avatar 3D: <b>'+bits.join(' · ')+'</b> — <a href="avatar.html" style="color:inherit;font-weight:700">ubah →</a>';
+  }
+
+  var mode=(qp('mode')||'').toLowerCase();
+  if(mode==='solo'||mode==='create'||mode==='join'){
+    if(mode==='create'){
+      var mx=parseInt(qp('max'),10);
+      if(mx>=2&&mx<=8){var sel=document.getElementById('mpCreateMax');if(sel)sel.value=String(mx);}
+    }
+    if(mode==='join'){
+      var code=(qp('code')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
+      var jc=document.getElementById('mpJoinCode');if(jc&&code)jc.value=code;
+    }
+    try{history.replaceState(null,'',location.pathname);}catch(e){}
+    var tries=0;
+    var timer=setInterval(function(){
+      tries++;
+      if(tries>60){clearInterval(timer);return;}
+      if(mode==='solo'){
+        clearInterval(timer);
+        document.getElementById('btnStart').click();
+      }else{
+        if(!MP.ready)return;
+        clearInterval(timer);
+        if(mode==='create'){document.getElementById('btnMpCreate').click();}
+        else{document.getElementById('btnMpJoin').click();}
+      }
+    },350);
+  }
+})();
 
 function onResize(){
   const wrap=document.getElementById('viewWrap');

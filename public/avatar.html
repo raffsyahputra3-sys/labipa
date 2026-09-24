@@ -1,0 +1,1806 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Avatar Studio 3D · LABIPA</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;1,9..144,400&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+        serif: ['Fraunces', 'serif'],
+      },
+      colors: {
+        paper: {
+          DEFAULT: '#F5F1E8',
+          hi: '#FFFDF7',
+          lo: '#EAE4D7',
+        },
+        ink: {
+          DEFAULT: '#1A1A1A',
+          2: '#374151',
+        },
+        safety: '#D97706',
+        alert: '#DC2626',
+        chalk: '#4A5568',
+        rule: '#9CA3AF',
+        'rule-soft': '#E5E7EB',
+      }
+    }
+  }
+}
+</script>
+
+<style>
+:root{
+  --paper:#F5F1E8;
+  --paper-hi:#FFFDF7;
+  --paper-lo:#EAE4D7;
+  --ink:#1A1A1A;
+  --ink-2:#374151;
+  --safety:#D97706;
+  --alert:#DC2626;
+  --chalk:#4A5568;
+  --rule:#9CA3AF;
+  --rule-soft:#E5E7EB;
+  --shadow-hard: 3px 3px 0 var(--ink);
+  --shadow-hard-lg: 5px 5px 0 var(--ink);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--paper);
+  color: var(--ink);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============ PAPER PANELS ============ */
+.paper-panel {
+  background: var(--paper-hi);
+  border: 1.5px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+}
+
+.paper-panel-flat {
+  background: var(--paper-hi);
+  border: 1.5px solid var(--ink);
+}
+
+.paper-card {
+  background: var(--paper-hi);
+  border: 1.5px solid var(--ink);
+  transition: transform .15s ease-out, box-shadow .15s ease-out;
+}
+.paper-card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-hard);
+}
+.paper-card.active {
+  background: var(--ink);
+  color: var(--paper-hi);
+  box-shadow: var(--shadow-hard);
+}
+.paper-card.active .text-slate-400 { color: var(--rule-soft); }
+
+/* ============ BUTTONS ============ */
+.btn-ink {
+  background: var(--ink);
+  color: var(--paper-hi);
+  border: 1.5px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  font-weight: 600;
+  transition: transform .1s ease-out, box-shadow .1s ease-out, background .15s;
+  cursor: pointer;
+}
+.btn-ink:hover {
+  background: var(--safety);
+  border-color: var(--ink);
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+.btn-ink:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.btn-ink:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--shadow-hard);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  font-weight: 600;
+  transition: transform .1s, box-shadow .1s, background .15s;
+  cursor: pointer;
+}
+.btn-ghost:hover {
+  background: var(--ink);
+  color: var(--paper-hi);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.btn-ghost:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+/* ============ TABS ============ */
+.tab-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 8px 6px;
+  background: transparent;
+  color: var(--rule);
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all .15s;
+}
+.tab-btn:hover { color: var(--ink); }
+.tab-btn.active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+  background: var(--paper-lo);
+}
+
+/* ============ COLOR DOTS ============ */
+.color-dot {
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  border: 1.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: transform .12s ease-out, box-shadow .12s ease-out;
+}
+.color-dot:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.color-dot.active {
+  transform: translate(1px, 1px);
+  box-shadow: 0 0 0 var(--ink);
+  outline: 2px solid var(--safety);
+  outline-offset: 2px;
+}
+
+/* ============ INPUT ============ */
+.field-input {
+  font-family: 'Fraunces', serif;
+  font-size: 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--ink);
+  padding: 6px 0;
+  color: var(--ink);
+  outline: none;
+  width: 100%;
+  transition: border-color .15s;
+}
+.field-input:focus {
+  border-bottom-color: var(--safety);
+  border-bottom-width: 2px;
+}
+.field-input::placeholder {
+  color: var(--rule);
+  font-style: italic;
+}
+
+.field-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  background: var(--paper);
+  border: 1.5px dashed var(--ink);
+  padding: 10px 12px;
+  color: var(--ink);
+  outline: none;
+  width: 100%;
+  transition: border-color .15s, background .15s;
+}
+.field-mono:focus {
+  border-style: solid;
+  border-color: var(--safety);
+  background: var(--paper-hi);
+}
+
+/* ============ LABEL ============ */
+.label-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--chalk);
+}
+
+/* ============ SCROLLBAR ============ */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--paper-lo); }
+::-webkit-scrollbar-thumb { background: var(--rule); border: 1px solid var(--ink); }
+::-webkit-scrollbar-thumb:hover { background: var(--ink); }
+
+/* ============ SEGMENTED ============ */
+.seg-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 9px 12px;
+  background: var(--paper-hi);
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  cursor: pointer;
+  transition: all .12s;
+  flex: 1;
+  text-align: center;
+}
+.seg-btn:hover { background: var(--paper-lo); }
+.seg-btn.active {
+  background: var(--ink);
+  color: var(--paper-hi);
+}
+
+/* ============ STATUS ============ */
+.status-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  min-height: 16px;
+  padding: 4px 0;
+}
+.status-line.ok { color: #15803D; }
+.status-line.err { color: var(--alert); }
+.status-line.wait { color: var(--chalk); }
+.status-line.info { color: var(--safety); }
+
+/* ============ TOAST ============ */
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.toast-anim { animation: toastIn .25s ease-out; }
+
+/* ============ MOBILE ============ */
+@media (max-width: 768px) {
+  #customizer-sidebar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+    height: 55vh;
+    transform: translateY(calc(100% - 52px));
+    transition: transform .35s cubic-bezier(.2,.9,.3,1);
+    z-index: 30;
+  }
+  #customizer-sidebar.open { transform: translateY(0); }
+  #mobile-toggle { display: flex !important; }
+  #room-panel {
+    width: calc(100vw - 24px) !important;
+    max-width: 360px;
+  }
+}
+</style>
+</head>
+<body class="w-screen h-screen relative flex flex-col overflow-hidden">
+
+<div id="canvas-container" class="absolute inset-0 z-0 cursor-grab active:cursor-grabbing"></div>
+
+<!-- ============ HEADER ============ -->
+<header class="relative z-20 p-3 md:p-4 flex flex-wrap justify-between items-center gap-3 pointer-events-none">
+
+  <div class="paper-panel px-4 py-2.5 flex items-center gap-3 pointer-events-auto">
+    <div class="w-9 h-9 bg-ink flex items-center justify-center text-paper-hi" style="background:var(--ink);color:var(--paper-hi)">
+      <i class="fa-solid fa-flask-vial"></i>
+    </div>
+    <div>
+      <h1 class="font-serif font-bold text-base md:text-lg leading-none tracking-tight">
+        LABIPA<span style="color:var(--safety)">·</span>3D
+      </h1>
+      <p class="label-mono mt-1">Researcher Studio · Edisi 2024</p>
+    </div>
+  </div>
+
+  <!-- PRESET PILLS -->
+  <div class="paper-panel px-1.5 py-1.5 flex items-center gap-1 pointer-events-auto overflow-x-auto max-w-full">
+    <button id="pill-cute" onclick="selectQuickPill('cute')" class="tab-btn active flex items-center gap-2 whitespace-nowrap px-3 py-1.5" style="border-bottom:none">
+      <span style="color:var(--safety)">●</span> Chibi
+    </button>
+    <button id="pill-virologist" onclick="selectQuickPill('virologist')" class="tab-btn flex items-center gap-2 whitespace-nowrap px-3 py-1.5" style="border-bottom:none">
+      <span style="color:#15803D">●</span> Virologist
+    </button>
+    <button id="pill-cyber" onclick="selectQuickPill('cyber')" class="tab-btn flex items-center gap-2 whitespace-nowrap px-3 py-1.5" style="border-bottom:none">
+      <span style="color:#7E22CE">●</span> Cyber
+    </button>
+    <button id="pill-quantum" onclick="selectQuickPill('quantum')" class="tab-btn flex items-center gap-2 whitespace-nowrap px-3 py-1.5" style="border-bottom:none">
+      <span style="color:#9A3412">●</span> Quantum
+    </button>
+  </div>
+
+  <!-- ACTIONS -->
+  <div class="paper-panel px-1.5 py-1.5 flex items-center gap-1.5 pointer-events-auto">
+    <a href="index.html" class="btn-ink px-3 py-2 text-xs flex items-center gap-2" style="text-decoration:none" title="Masuk ke game LabIPA 3D Studio">
+      <i class="fa-solid fa-gamepad"></i>
+      <span class="hidden md:inline">Masuk Game</span>
+    </a>
+    <button onclick="saveAvatar()" class="btn-ghost px-3 py-2 text-xs flex items-center gap-2" title="Simpan">
+      <i class="fa-solid fa-floppy-disk"></i>
+      <span class="hidden md:inline">Simpan</span>
+    </button>
+    <button onclick="exportScreenshot()" class="btn-ink px-3 py-2 text-xs flex items-center gap-2" title="Download">
+      <i class="fa-solid fa-camera-retro"></i>
+      <span class="hidden md:inline">Download</span>
+    </button>
+  </div>
+
+</header>
+
+<!-- ============ MAIN ============ -->
+<main class="relative z-10 flex-1 px-3 md:px-4 flex justify-between items-stretch pointer-events-none mb-3 overflow-hidden gap-3">
+
+  <!-- LEFT: CUSTOMIZER -->
+  <div id="customizer-sidebar" class="w-96 max-w-[calc(100vw-1.5rem)] flex flex-col pointer-events-auto h-full overflow-hidden">
+    <div class="paper-panel flex flex-col h-full overflow-hidden">
+
+      <div id="mobile-toggle" onclick="toggleMobileSidebar()" class="hidden items-center justify-center py-3 cursor-pointer border-b-2 pointer-events-auto" style="border-color:var(--ink);background:var(--paper-lo)">
+        <div class="w-12 h-1" style="background:var(--ink)"></div>
+        <span class="ml-3 label-mono">Kustomisasi</span>
+      </div>
+
+      <div class="flex border-b-2 overflow-x-auto" style="border-color:var(--ink);background:var(--paper-lo)">
+        <button id="tab-head" onclick="switchTab('head')" class="tab-btn active flex-1 flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-user-gear"></i> Kepala
+        </button>
+        <button id="tab-gear" onclick="switchTab('gear')" class="tab-btn flex-1 flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-glasses"></i> Mata
+        </button>
+        <button id="tab-suit" onclick="switchTab('suit')" class="tab-btn flex-1 flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-user-nurse"></i> Jas
+        </button>
+        <button id="tab-props" onclick="switchTab('props')" class="tab-btn flex-1 flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-flask"></i> Alat
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 space-y-5" style="background:var(--paper-hi)">
+
+        <!-- HEAD -->
+        <div id="panel-head" class="space-y-5">
+          <div>
+            <div class="flex justify-between items-baseline mb-2">
+              <span class="label-mono">Warna Kulit</span>
+              <span id="skin-label" class="label-mono" style="color:var(--safety)">Fair Skin</span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="color-dot active" style="background:#fce0d1" onclick="setSkinColor('#fce0d1','Fair Skin',this)"></div>
+              <div class="color-dot" style="background:#f3c2a2" onclick="setSkinColor('#f3c2a2','Natural Peach',this)"></div>
+              <div class="color-dot" style="background:#d49b72" onclick="setSkinColor('#d49b72','Warm Olive',this)"></div>
+              <div class="color-dot" style="background:#8d5524" onclick="setSkinColor('#8d5524','Bronze Dark',this)"></div>
+              <div class="color-dot" style="background:#3d2314" onclick="setSkinColor('#3d2314','Deep Dark',this)"></div>
+              <div class="color-dot" style="background:#67e8f9" onclick="setSkinColor('#67e8f9','Cyber Android',this)"></div>
+            </div>
+          </div>
+
+          <div>
+            <span class="label-mono block mb-2">Gaya Rambut</span>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="setHairstyle('cute_genius_hair')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">Fluffy Chibi</div>
+                <div class="label-mono mt-0.5">Pixar</div>
+              </button>
+              <button onclick="setHairstyle('mad_scientist')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">Mad Scientist</div>
+                <div class="label-mono mt-0.5">Spiky</div>
+              </button>
+              <button onclick="setHairstyle('clean_cut')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">Clean Cut</div>
+                <div class="label-mono mt-0.5">Formal</div>
+              </button>
+              <button onclick="setHairstyle('lab_bun')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">Lab Bun</div>
+                <div class="label-mono mt-0.5">Scientist</div>
+              </button>
+              <button onclick="setHairstyle('cyber_ponytail')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">Cyber Bob</div>
+                <div class="label-mono mt-0.5">Futuristic</div>
+              </button>
+              <button onclick="setHairstyle('cleanroom_hood')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">Hazmat Hood</div>
+                <div class="label-mono mt-0.5">ISO 5</div>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <span class="label-mono block mb-2">Warna Rambut</span>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="color-dot active" style="background:#5c3a21" onclick="setHairColor('#5c3a21',this)"></div>
+              <div class="color-dot" style="background:#1e293b" onclick="setHairColor('#1e293b',this)"></div>
+              <div class="color-dot" style="background:#78350f" onclick="setHairColor('#78350f',this)"></div>
+              <div class="color-dot" style="background:#eab308" onclick="setHairColor('#eab308',this)"></div>
+              <div class="color-dot" style="background:#06b6d4" onclick="setHairColor('#06b6d4',this)"></div>
+              <div class="color-dot" style="background:#a855f7" onclick="setHairColor('#a855f7',this)"></div>
+              <div class="color-dot" style="background:#e2e8f0" onclick="setHairColor('#e2e8f0',this)"></div>
+            </div>
+          </div>
+
+          <div>
+            <span class="label-mono block mb-2">Warna Mata</span>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="color-dot active" style="background:#1e293b" onclick="setEyeColor('#1e293b',this)"></div>
+              <div class="color-dot" style="background:#78350f" onclick="setEyeColor('#78350f',this)"></div>
+              <div class="color-dot" style="background:#0284c7" onclick="setEyeColor('#0284c7',this)"></div>
+              <div class="color-dot" style="background:#059669" onclick="setEyeColor('#059669',this)"></div>
+              <div class="color-dot" style="background:#a855f7" onclick="setEyeColor('#a855f7',this)"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GEAR -->
+        <div id="panel-gear" class="space-y-3 hidden">
+          <span class="label-mono block">Kacamata & Pelindung</span>
+          <div class="grid grid-cols-1 gap-2">
+            <button onclick="setEyewear('chibi_round_glasses')" class="paper-card p-3 text-left">
+              <div class="flex justify-between items-center">
+                <div class="font-bold text-xs">Chibi Round Glasses</div>
+                <span class="label-mono" style="color:var(--safety)">Featured</span>
+              </div>
+              <div class="label-mono mt-1">Bingkai bulat besar · Pixar</div>
+            </button>
+            <button onclick="setEyewear('safety_specs')" class="paper-card p-3 text-left">
+              <div class="font-bold text-xs">Safety Goggles</div>
+              <div class="label-mono mt-1">Pelindung UV kimia</div>
+            </button>
+            <button onclick="setEyewear('laser_visor')" class="paper-card p-3 text-left">
+              <div class="font-bold text-xs">Cyber HUD Visor</div>
+              <div class="label-mono mt-1">Scanner molekuler optik</div>
+            </button>
+            <button onclick="setEyewear('gas_mask')" class="paper-card p-3 text-left">
+              <div class="font-bold text-xs">BSL-4 Gas Mask</div>
+              <div class="label-mono mt-1">Respirator dual canister</div>
+            </button>
+            <button onclick="setEyewear('none')" class="paper-card p-3 text-left">
+              <div class="font-bold text-xs">Tanpa Kacamata</div>
+              <div class="label-mono mt-1">None</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- SUIT -->
+        <div id="panel-suit" class="space-y-5 hidden">
+          <div>
+            <span class="label-mono block mb-2">Gaya Jas Lab</span>
+            <div class="grid grid-cols-1 gap-2">
+              <button onclick="setSuitType('vest_and_coat')" class="paper-card p-3 text-left">
+                <div class="font-bold text-xs">Lab Coat + Vest & Tie</div>
+                <div class="label-mono mt-1">Open coat + stetoskop</div>
+              </button>
+              <button onclick="setSuitType('classic_coat')" class="paper-card p-3 text-left">
+                <div class="font-bold text-xs">Classic White Coat</div>
+                <div class="label-mono mt-1">Jas kimia standar</div>
+              </button>
+              <button onclick="setSuitType('hazmat_suit')" class="paper-card p-3 text-left">
+                <div class="font-bold text-xs">Heavy Hazmat Suit</div>
+                <div class="label-mono mt-1">Setelan radiasi terisolasi</div>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <span class="label-mono block mb-2">Warna Jas</span>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="color-dot active" style="background:#f8fafc" onclick="setCoatColor('#f8fafc',this)"></div>
+              <div class="color-dot" style="background:#0f172a" onclick="setCoatColor('#0f172a',this)"></div>
+              <div class="color-dot" style="background:#0284c7" onclick="setCoatColor('#0284c7',this)"></div>
+              <div class="color-dot" style="background:#059669" onclick="setCoatColor('#059669',this)"></div>
+              <div class="color-dot" style="background:#d97706" onclick="setCoatColor('#d97706',this)"></div>
+              <div class="color-dot" style="background:#a855f7" onclick="setCoatColor('#a855f7',this)"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PROPS -->
+        <div id="panel-props" class="space-y-5 hidden">
+          <div>
+            <span class="label-mono block mb-2">Alat di Tangan</span>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="setHandProp('folder_and_stethoscope')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">Folder</div>
+                <div class="label-mono mt-0.5">Jurnal</div>
+              </button>
+              <button onclick="setHandProp('erlenmeyer')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">Erlenmeyer</div>
+                <div class="label-mono mt-0.5">Kimia</div>
+              </button>
+              <button onclick="setHandProp('dna_hologram')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">DNA Hologram</div>
+                <div class="label-mono mt-0.5">Genom</div>
+              </button>
+              <button onclick="setHandProp('pipette_tube')" class="paper-card p-2.5 text-left">
+                <div class="font-bold text-xs">Pipette</div>
+                <div class="label-mono mt-0.5">Sample</div>
+              </button>
+              <button onclick="setHandProp('none')" class="paper-card p-2.5 text-left col-span-2">
+                <div class="font-bold text-xs">Tanpa Alat</div>
+                <div class="label-mono mt-0.5">None</div>
+              </button>
+            </div>
+          </div>
+
+          <div class="paper-panel-flat p-3 flex items-center justify-between">
+            <span class="text-xs font-semibold">Objek Lab Melayang</span>
+            <input type="checkbox" id="check-floating-flasks" checked onchange="toggleFloatingFlasks(this.checked)" class="w-4 h-4 cursor-pointer" style="accent-color:var(--safety)">
+          </div>
+
+          <div>
+            <span class="label-mono block mb-2">Pencahayaan</span>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="setLabEnvironment('studio_warm')" class="paper-card p-2 text-left">
+                <div class="font-bold text-xs">Warm</div>
+              </button>
+              <button onclick="setLabEnvironment('cleanroom')" class="paper-card p-2 text-left">
+                <div class="font-bold text-xs">Sterile</div>
+              </button>
+              <button onclick="setLabEnvironment('biohazard')" class="paper-card p-2 text-left">
+                <div class="font-bold text-xs">Biohazard</div>
+              </button>
+              <button onclick="setLabEnvironment('cyber_quantum')" class="paper-card p-2 text-left">
+                <div class="font-bold text-xs">Quantum</div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="p-3 flex items-center justify-between gap-2 flex-wrap border-t-2" style="background:var(--paper-lo);border-color:var(--ink)">
+        <div class="flex items-center gap-1 flex-wrap">
+          <button onclick="setPose('idle')" class="btn-ghost px-2.5 py-1.5 text-xs">Idle</button>
+          <button onclick="setPose('inspect')" class="btn-ghost px-2.5 py-1.5 text-xs">Inspect</button>
+          <button onclick="triggerEureka()" class="btn-ink px-2.5 py-1.5 text-xs">Eureka!</button>
+        </div>
+        <button onclick="toggleSound()" id="btn-sound" class="btn-ghost p-2 text-xs" title="Suara">
+          <i class="fa-solid fa-volume-high"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: CAMERA + ROOM PANEL -->
+  <div class="w-72 flex-col gap-3 pointer-events-auto h-fit hidden md:flex">
+
+    <!-- CAMERA -->
+    <div class="paper-panel p-3">
+      <div class="label-mono mb-2">Kamera</div>
+      <div class="flex gap-1">
+        <button onclick="setCameraAngle('head')" class="seg-btn">Kepala</button>
+        <button onclick="setCameraAngle('upper')" class="seg-btn">Badan</button>
+        <button onclick="setCameraAngle('full')" class="seg-btn active">Penuh</button>
+      </div>
+    </div>
+
+    <!-- AUTO ROTATE -->
+    <div class="paper-panel p-3">
+      <button onclick="toggleAutoRotate()" id="btn-autorotate" class="btn-ghost w-full px-3 py-2 text-xs flex items-center justify-center gap-2">
+        <i class="fa-solid fa-rotate"></i> Auto-Rotate: OFF
+      </button>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- ============ ROOM PANEL (KANAN BAWAH) ============ -->
+<div id="room-panel" class="fixed z-30 pointer-events-auto transition-all duration-300" style="right:16px;bottom:16px;width:380px">
+
+  <div id="room-collapsed" class="paper-panel p-1.5">
+    <button onclick="toggleRoomPanel()" class="btn-ink w-full px-4 py-3 text-sm flex items-center justify-between gap-3">
+      <span class="flex items-center gap-2">
+        <i class="fa-solid fa-play"></i>
+        <span>Mode Bermain</span>
+      </span>
+      <i class="fa-solid fa-chevron-up" id="room-chevron"></i>
+    </button>
+  </div>
+
+  <div id="room-expanded" class="paper-panel hidden" style="max-height: 85vh; overflow:hidden">
+    <div class="flex items-center justify-between px-4 py-2.5 border-b-2" style="background:var(--ink);color:var(--paper-hi);border-color:var(--ink)">
+      <span class="label-mono" style="color:var(--paper-hi)">Mode Bermain</span>
+      <button onclick="toggleRoomPanel()" class="text-xs" style="color:var(--paper-hi)">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <!-- TABS -->
+    <div class="flex border-b-2" style="border-color:var(--ink);background:var(--paper-lo)">
+      <button id="mp-tab-solo" onclick="switchRoomTab('solo')" class="tab-btn active flex-1" style="padding:12px 6px">Solo</button>
+      <button id="mp-tab-create" onclick="switchRoomTab('create')" class="tab-btn flex-1" style="padding:12px 6px">Buat Room</button>
+      <button id="mp-tab-join" onclick="switchRoomTab('join')" class="tab-btn flex-1" style="padding:12px 6px">Gabung</button>
+    </div>
+
+    <div class="p-4 overflow-y-auto" style="max-height: calc(85vh - 120px);background:var(--paper-hi)">
+
+      <!-- SOLO -->
+      <div id="mp-panel-solo" class="space-y-5">
+        <div>
+          <label class="label-mono block mb-2">Nama Peneliti</label>
+          <div class="flex items-baseline gap-2">
+            <select class="field-mono" style="width:80px;padding:6px 8px;font-size:12px">
+              <option>Dr.</option>
+              <option>Prof.</option>
+              <option>Ir.</option>
+              <option>Mr.</option>
+            </select>
+            <input type="text" id="solo-name" class="field-input" placeholder="Alexander Vance" maxlength="30">
+          </div>
+          <p class="label-mono mt-2">ⓘ Muncul di ID Card & leaderboard</p>
+        </div>
+
+        <div>
+          <label class="label-mono block mb-2">Kode Redeem (opsional)</label>
+          <div class="flex gap-2">
+            <input type="text" id="redeem-code" class="field-mono" placeholder="LAB-XXXX-XX" maxlength="11" style="flex:1">
+            <button id="redeem-btn" onclick="redeemCode()" class="btn-ink px-3 py-2 text-xs" disabled>Redeem</button>
+          </div>
+          <p id="redeem-status" class="status-line"></p>
+        </div>
+
+        <button onclick="startSolo()" id="solo-start-btn" class="btn-ink w-full px-4 py-3 text-sm flex items-center justify-center gap-2" disabled>
+          Mulai Penelitian <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </div>
+
+      <!-- CREATE -->
+      <div id="mp-panel-create" class="space-y-5 hidden">
+        <div>
+          <label class="label-mono block mb-2">Nama Peneliti</label>
+          <div class="flex items-baseline gap-2">
+            <select class="field-mono" style="width:80px;padding:6px 8px;font-size:12px">
+              <option>Dr.</option>
+              <option>Prof.</option>
+              <option>Ir.</option>
+            </select>
+            <input type="text" id="create-name" class="field-input" placeholder="Nama kamu..." maxlength="30">
+          </div>
+        </div>
+
+        <div>
+          <label class="label-mono block mb-2">Kapasitas</label>
+          <div class="flex gap-1">
+            <button onclick="setCapacity(2,this)" class="seg-btn">2</button>
+            <button onclick="setCapacity(4,this)" class="seg-btn active">4</button>
+            <button onclick="setCapacity(8,this)" class="seg-btn">8</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="label-mono block mb-2">Visibilitas</label>
+          <div class="flex gap-1">
+            <button onclick="setVisibility('private',this)" class="seg-btn active">Privat</button>
+            <button onclick="setVisibility('public',this)" class="seg-btn">Publik</button>
+          </div>
+          <p id="vis-helper" class="label-mono mt-2">ⓘ Hanya yang punya kode bisa masuk</p>
+        </div>
+
+        <button onclick="createRoom()" id="create-btn" class="btn-ink w-full px-4 py-3 text-sm flex items-center justify-center gap-2">
+          Buat Room <i class="fa-solid fa-arrow-right"></i>
+        </button>
+
+        <div id="room-code-box" class="hidden border-2 border-dashed p-3" style="border-color:var(--safety);background:var(--paper)">
+          <div class="label-mono">Kode Room</div>
+          <div class="font-mono text-2xl font-bold my-2" style="color:var(--safety);letter-spacing:.16em" id="room-code-display">LAB-XXXX-XX</div>
+          <div class="flex gap-2 mt-2">
+            <button onclick="copyRoomCode()" class="btn-ghost px-3 py-1.5 text-xs">Salin</button>
+            <button onclick="shareRoomCode()" class="btn-ghost px-3 py-1.5 text-xs">Bagikan</button>
+          </div>
+          <div id="room-players" class="mt-3 space-y-1"></div>
+          <p id="room-status" class="status-line wait">Menunggu 1/4 pemain...</p>
+        </div>
+      </div>
+
+      <!-- JOIN -->
+      <div id="mp-panel-join" class="space-y-5 hidden">
+        <div>
+          <label class="label-mono block mb-2">Nama Peneliti</label>
+          <div class="flex items-baseline gap-2">
+            <select class="field-mono" style="width:80px;padding:6px 8px;font-size:12px">
+              <option>Dr.</option>
+              <option>Prof.</option>
+              <option>Ir.</option>
+            </select>
+            <input type="text" id="join-name" class="field-input" placeholder="Nama kamu..." maxlength="30">
+          </div>
+        </div>
+
+        <div>
+          <label class="label-mono block mb-2">Kode Room</label>
+          <input type="text" id="join-code" class="field-mono" placeholder="LAB-XXXX-XX" maxlength="11">
+          <p class="label-mono mt-2">ⓘ Minta kode ini ke host room</p>
+        </div>
+
+        <button onclick="joinRoom()" id="join-btn" class="btn-ink w-full px-4 py-3 text-sm flex items-center justify-center gap-2">
+          Gabung Room <i class="fa-solid fa-arrow-right"></i>
+        </button>
+
+        <p id="join-status" class="status-line"></p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============ FOOTER ============ -->
+<footer class="relative z-10 p-3 md:p-4 flex justify-between items-center pointer-events-none">
+  <div class="paper-panel px-4 py-2 text-xs pointer-events-auto flex items-center gap-3">
+    <span class="flex items-center gap-1.5 font-mono" style="color:#15803D">
+      <span class="w-2 h-2 rounded-full" style="background:#15803D"></span> 3D AKTIF
+    </span>
+    <span class="hidden sm:inline" style="color:var(--rule)">|</span>
+    <span class="font-mono hidden sm:inline" style="color:var(--chalk)">Drag untuk putar</span>
+  </div>
+  <div class="paper-panel px-2 py-1.5 pointer-events-auto flex items-center gap-1">
+    <button onclick="resetCamera()" class="btn-ghost p-2 text-xs" title="Reset"><i class="fa-solid fa-arrows-to-dot"></i></button>
+    <button onclick="toggleFullscreen()" class="btn-ghost p-2 text-xs" title="Fullscreen"><i class="fa-solid fa-expand"></i></button>
+  </div>
+</footer>
+
+<!-- ============ TOAST ============ -->
+<div id="toast" class="fixed left-1/2 z-50 pointer-events-none hidden" style="bottom:100px">
+  <div class="paper-panel px-4 py-2.5 text-xs font-semibold flex items-center gap-2 toast-anim">
+    <i class="fa-solid fa-check-circle" style="color:#15803D"></i>
+    <span id="toast-msg">Saved!</span>
+  </div>
+</div>
+
+<script>
+// ============ STATE ============
+const DEFAULT_STATE = {
+  skinColor: '#fce0d1', skinName: 'Fair Skin', eyeColor: '#1e293b',
+  hairstyle: 'cute_genius_hair', hairColor: '#5c3a21',
+  eyewear: 'chibi_round_glasses', visorColor: '#10b981',
+  suitType: 'vest_and_coat', coatColor: '#ffffff', vestColor: '#4a3525',
+  hasStethoscope: true, hasFloatingFlasks: true,
+  handProp: 'folder_and_stethoscope', pose: 'idle',
+  environment: 'studio_warm',
+  soundEnabled: true, autoRotate: false
+};
+
+let avatarState = { ...DEFAULT_STATE };
+
+const roomState = {
+  capacity: 4, visibility: 'private', roomCode: null, players: []
+};
+
+// ============ THREE.JS ============
+let scene, camera, renderer, controls;
+let avatarGroup, floatingLabGroup;
+let hairGroup, eyewearGroup, coatMesh, propGroup;
+let eyesGroup = [];
+let ambientLight, mainSpotLight, bgLight, rimLight;
+let clock = new THREE.Clock();
+let targetCamPos = new THREE.Vector3(0, 1.4, 2.5);
+let targetCamTarget = new THREE.Vector3(0, 1.2, 0);
+
+// ============ BUILD AVATAR ============
+function buildAvatar() {
+  if (avatarGroup) scene.remove(avatarGroup);
+  avatarGroup = new THREE.Group();
+  eyesGroup = [];
+
+  const skinMat = new THREE.MeshStandardMaterial({ color: avatarState.skinColor, roughness: 0.55, metalness: 0.03 });
+
+  // --- HEAD ---
+  const headGroup = new THREE.Group();
+  const headGeo = new THREE.SphereGeometry(0.3, 32, 32);
+  headGeo.scale(1, 1.1, 1);
+  const headMesh = new THREE.Mesh(headGeo, skinMat);
+  headMesh.position.set(0, 1.8, 0);
+  headMesh.castShadow = true;
+  headGroup.add(headMesh);
+
+  const earGeo = new THREE.SphereGeometry(0.06, 16, 16);
+  const earL = new THREE.Mesh(earGeo, skinMat);
+  const earR = new THREE.Mesh(earGeo, skinMat);
+  earL.position.set(-0.3, 1.8, 0);
+  earR.position.set(0.3, 1.8, 0);
+  headGroup.add(earL, earR);
+
+  // Eyes
+  const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 });
+  const eyeIrisMat = new THREE.MeshStandardMaterial({ color: avatarState.eyeColor, roughness: 0.2 });
+  const eyePupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const eyeSparkleMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+  [-0.12, 0.12].forEach(xOffset => {
+    const g = new THREE.Group();
+    g.position.set(xOffset, 1.84, 0.25);
+    const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.07, 20, 20), eyeWhiteMat);
+    sclera.scale.set(1, 1.1, 0.5);
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 16), eyeIrisMat);
+    iris.position.set(0, 0, 0.04); iris.scale.set(1, 1, 0.3);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 12), eyePupilMat);
+    pupil.position.set(0, 0, 0.06); pupil.scale.set(1, 1, 0.2);
+    const sparkle = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8), eyeSparkleMat);
+    sparkle.position.set(0.015, 0.015, 0.07);
+    g.add(sclera, iris, pupil, sparkle);
+    headGroup.add(g);
+    eyesGroup.push(g);
+  });
+
+  const browMat = new THREE.MeshStandardMaterial({ color: avatarState.hairColor, roughness: 0.8 });
+  [-0.12, 0.12].forEach(xOffset => {
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.018, 0.02), browMat);
+    brow.position.set(xOffset, 1.94, 0.28);
+    brow.rotation.z = xOffset > 0 ? -0.1 : 0.1;
+    headGroup.add(brow);
+  });
+
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 12), skinMat);
+  nose.position.set(0, 1.78, 0.31);
+  headGroup.add(nose);
+
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.008, 8, 16, Math.PI), new THREE.MeshBasicMaterial({ color: 0x991b1b }));
+  mouth.rotation.x = Math.PI;
+  mouth.position.set(0, 1.72, 0.29);
+  headGroup.add(mouth);
+
+  // HAIR
+  const hairMat = new THREE.MeshStandardMaterial({ color: avatarState.hairColor, roughness: 0.65 });
+  hairGroup = new THREE.Group();
+  const hs = avatarState.hairstyle;
+
+  if (hs === 'cute_genius_hair') {
+    const main = new THREE.Mesh(new THREE.SphereGeometry(0.33, 24, 24), hairMat);
+    main.position.set(0, 1.88, -0.02);
+    hairGroup.add(main);
+    [[-0.15,2.05,0.15,0.14],[0,2.08,0.2,0.16],[0.15,2.04,0.16,0.13],[-0.22,1.95,0.18,0.12],[0.22,1.95,0.18,0.12]]
+      .forEach(([x,y,z,r]) => {
+        const p = new THREE.Mesh(new THREE.SphereGeometry(r,16,16), hairMat);
+        p.position.set(x,y,z); hairGroup.add(p);
+      });
+  } else if (hs === 'mad_scientist') {
+    const base = new THREE.Mesh(new THREE.SphereGeometry(0.31, 16, 16), hairMat);
+    base.position.set(0, 1.85, 0); hairGroup.add(base);
+    for (let i = 0; i < 14; i++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.25, 8), hairMat);
+      const a = (i / 14) * Math.PI * 2;
+      spike.position.set(Math.sin(a)*0.28, 1.98 + Math.cos(i)*0.05, Math.cos(a)*0.28);
+      spike.rotation.x = Math.cos(a)*0.5;
+      spike.rotation.z = -Math.sin(a)*0.5;
+      hairGroup.add(spike);
+    }
+  } else if (hs === 'clean_cut') {
+    const top = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.2, 0.58), hairMat);
+    top.position.set(0, 2.02, -0.02);
+    const side = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 20), hairMat);
+    side.position.set(0, 1.86, -0.02);
+    hairGroup.add(top, side);
+  } else if (hs === 'lab_bun') {
+    const base = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 20), hairMat);
+    base.position.set(0, 1.84, -0.02);
+    const bun = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), hairMat);
+    bun.position.set(0, 2.12, -0.18);
+    hairGroup.add(base, bun);
+  } else if (hs === 'cyber_ponytail') {
+    const base = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 20), hairMat);
+    base.position.set(0, 1.85, -0.02);
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.08, 0.4, 12), hairMat);
+    tail.position.set(0, 1.7, -0.32); tail.rotation.x = -0.4;
+    hairGroup.add(base, tail);
+  } else if (hs === 'cleanroom_hood') {
+    const hoodMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35 });
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.34, 24, 24), hoodMat);
+    hood.position.set(0, 1.82, 0);
+    hairGroup.add(hood);
+  }
+  headGroup.add(hairGroup);
+
+  eyewearGroup = buildEyewear();
+  headGroup.add(eyewearGroup);
+  avatarGroup.add(headGroup);
+
+  // --- NECK & TORSO ---
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.14, 16), skinMat);
+  neck.position.set(0, 1.48, 0);
+  avatarGroup.add(neck);
+
+  const coatMat = new THREE.MeshStandardMaterial({ color: avatarState.coatColor, roughness: 0.5 });
+  const pantsMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 });
+  const vestMat = new THREE.MeshStandardMaterial({ color: avatarState.vestColor, roughness: 0.75 });
+  const shirtMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const tieMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 0.6, 20), avatarState.suitType === 'vest_and_coat' ? vestMat : shirtMat);
+  torso.position.set(0, 1.15, 0);
+  torso.castShadow = true;
+  avatarGroup.add(torso);
+
+  if (avatarState.suitType === 'vest_and_coat') {
+    const tie = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.02), tieMat);
+    tie.position.set(0, 1.25, 0.21);
+    avatarGroup.add(tie);
+  }
+
+  coatMesh = new THREE.Group();
+  if (avatarState.suitType === 'vest_and_coat' || avatarState.suitType === 'classic_coat') {
+    const back = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, 0.65, 20, 1, false, Math.PI*0.25, Math.PI*1.5), coatMat);
+    back.position.set(0, 1.12, 0); back.castShadow = true;
+    const flapL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.62, 0.04), coatMat);
+    flapL.position.set(-0.16, 1.12, 0.18); flapL.rotation.y = -0.25;
+    const flapR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.62, 0.04), coatMat);
+    flapR.position.set(0.16, 1.12, 0.18); flapR.rotation.y = 0.25;
+    coatMesh.add(back, flapL, flapR);
+  } else if (avatarState.suitType === 'hazmat_suit') {
+    const hazmatMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.35 });
+    const torsoH = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.25, 0.68, 20), hazmatMat);
+    torsoH.position.set(0, 1.14, 0);
+    coatMesh.add(torsoH);
+  }
+  avatarGroup.add(coatMesh);
+
+  if (avatarState.hasStethoscope && avatarState.suitType === 'vest_and_coat') {
+    const stethMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.5 });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.015, 12, 24, Math.PI*1.2), stethMat);
+    ring.rotation.x = Math.PI/2; ring.position.set(0, 1.42, 0.04);
+    const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.015, 16), new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9 }));
+    bell.position.set(0.08, 1.18, 0.22); bell.rotation.x = Math.PI/2;
+    avatarGroup.add(ring, bell);
+  }
+
+  // ============ ARMS WITH FULL HANDS ============
+  [-1, 1].forEach(side => {
+    const armRoot = new THREE.Group();
+    armRoot.position.set(side * 0.28, 1.42, 0);
+
+    // Upper arm (sleeve)
+    const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.07, 0.26, 16), coatMat);
+    upperArm.position.set(0, -0.13, 0);
+    upperArm.castShadow = true;
+    armRoot.add(upperArm);
+
+    // Elbow joint
+    const elbow = new THREE.Group();
+    elbow.position.set(0, -0.26, 0);
+    elbow.rotation.x = 0.25;
+    armRoot.add(elbow);
+
+    // Forearm (sleeve)
+    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.06, 0.24, 16), coatMat);
+    forearm.position.set(0, -0.12, 0);
+    forearm.castShadow = true;
+    elbow.add(forearm);
+
+    // Wrist joint
+    const wrist = new THREE.Group();
+    wrist.position.set(0, -0.24, 0);
+    elbow.add(wrist);
+
+    // Palm
+    const palmGeo = new THREE.BoxGeometry(0.09, 0.12, 0.04);
+    const palm = new THREE.Mesh(palmGeo, skinMat);
+    palm.position.set(0, -0.06, 0);
+    palm.castShadow = true;
+    wrist.add(palm);
+
+    // Thumb
+    const thumb = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.012, 0.055, 8), skinMat);
+    thumb.position.set(side * 0.045, -0.03, 0.01);
+    thumb.rotation.z = side * -0.6;
+    wrist.add(thumb);
+    const thumbTip = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8), skinMat);
+    thumbTip.position.set(side * 0.06, -0.06, 0.012);
+    wrist.add(thumbTip);
+
+    // 4 fingers
+    const fingerX = [-0.032, -0.011, 0.011, 0.032];
+    const fingerLen = [0.07, 0.08, 0.075, 0.065];
+    fingerX.forEach((fx, i) => {
+      const fingerGroup = new THREE.Group();
+      fingerGroup.position.set(fx, -0.12, 0);
+      fingerGroup.rotation.x = 0.15;
+
+      const finger = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.011, 0.009, fingerLen[i], 8),
+        skinMat
+      );
+      finger.position.set(0, -fingerLen[i]/2, 0);
+      finger.castShadow = true;
+      fingerGroup.add(finger);
+
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 8), skinMat);
+      tip.position.set(0, -fingerLen[i], 0);
+      fingerGroup.add(tip);
+
+      wrist.add(fingerGroup);
+    });
+
+    // Pose per side
+    if (side === 1) {
+      // Right arm slightly forward (holding prop)
+      armRoot.rotation.z = -0.22;
+      armRoot.rotation.x = 0.35;
+      elbow.rotation.x = 0.5;
+    } else {
+      // Left arm relaxed
+      armRoot.rotation.z = 0.15;
+      elbow.rotation.x = 0.2;
+    }
+    avatarGroup.add(armRoot);
+  });
+
+  // Legs
+  [-0.11, 0.11].forEach(x => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.075, 0.7, 16), pantsMat);
+    leg.position.set(x, 0.5, 0);
+    leg.castShadow = true;
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.22), new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.5 }));
+    shoe.position.set(x, 0.1, 0.04);
+    avatarGroup.add(leg, shoe);
+  });
+
+  propGroup = buildHandProp();
+  avatarGroup.add(propGroup);
+
+  scene.add(avatarGroup);
+  buildFloatingLabFlasks();
+}
+
+function buildEyewear() {
+  const group = new THREE.Group();
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.3, metalness: 0.6 });
+
+  if (avatarState.eyewear === 'chibi_round_glasses') {
+    const ringGeo = new THREE.TorusGeometry(0.1, 0.016, 16, 32);
+    const lensGeo = new THREE.CircleGeometry(0.095, 24);
+    const lensMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 0.9, opacity: 0.4, transparent: true, roughness: 0.1 });
+    const rL = new THREE.Mesh(ringGeo, frameMat);
+    const rR = new THREE.Mesh(ringGeo, frameMat);
+    rL.position.set(-0.13, 1.84, 0.34);
+    rR.position.set(0.13, 1.84, 0.34);
+    const lL = new THREE.Mesh(lensGeo, lensMat);
+    const lR = new THREE.Mesh(lensGeo, lensMat);
+    lL.position.set(-0.13, 1.84, 0.342);
+    lR.position.set(0.13, 1.84, 0.342);
+    const bridge = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.08, 12), frameMat);
+    bridge.rotation.z = Math.PI/2;
+    bridge.position.set(0, 1.84, 0.34);
+    group.add(rL, rR, lL, lR, bridge);
+  } else if (avatarState.eyewear === 'safety_specs') {
+    const visorMat = new THREE.MeshStandardMaterial({ color: avatarState.visorColor, transparent: true, opacity: 0.8 });
+    const spec = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.1, 0.12), visorMat);
+    spec.position.set(0, 1.84, 0.32);
+    group.add(spec);
+  } else if (avatarState.eyewear === 'laser_visor') {
+    const visorMat = new THREE.MeshStandardMaterial({ color: 0xa855f7, emissive: 0xa855f7, emissiveIntensity: 0.4 });
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.08, 0.14), visorMat);
+    visor.position.set(0, 1.84, 0.32);
+    group.add(visor);
+  } else if (avatarState.eyewear === 'gas_mask') {
+    const maskMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.7 });
+    const mask = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 16, 0, Math.PI*2, 0, Math.PI*0.55), maskMat);
+    mask.position.set(0, 1.76, 0.22);
+    mask.rotation.x = Math.PI * 0.5;
+    group.add(mask);
+    const filterMat = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.5 });
+    [-0.13, 0.13].forEach(x => {
+      const f = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.08, 12), filterMat);
+      f.position.set(x, 1.78, 0.28);
+      f.rotation.x = Math.PI/2;
+      group.add(f);
+    });
+  }
+  return group;
+}
+
+function buildHandProp() {
+  const group = new THREE.Group();
+  // Position at right hand
+  group.position.set(0.42, 0.78, 0.28);
+
+  if (avatarState.handProp === 'folder_and_stethoscope') {
+    const folderMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 });
+    const folder = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 0.04), folderMat);
+    folder.rotation.y = 0.3; folder.castShadow = true;
+    const bagMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.4 });
+    const bag = new THREE.Mesh(new THREE.SphereGeometry(0.09, 20, 20), bagMat);
+    bag.position.set(-0.14, -0.2, 0.1);
+    group.add(folder, bag);
+  } else if (avatarState.handProp === 'erlenmeyer') {
+    const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 0.9, opacity: 0.4, transparent: true });
+    const flask = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.28, 16), glassMat);
+    const liqMat = new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x10b981, emissiveIntensity: 0.4 });
+    const liquid = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.16, 16), liqMat);
+    liquid.position.y = -0.05;
+    group.add(flask, liquid);
+  } else if (avatarState.handProp === 'dna_hologram') {
+    const dnaMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.75 });
+    for (let i = 0; i < 5; i++) {
+      const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 12), dnaMat);
+      sphere.position.set(0, -0.14 + i*0.07, 0);
+      group.add(sphere);
+    }
+    const barMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.6 });
+    for (let i = 0; i < 4; i++) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.09, 8), barMat);
+      bar.rotation.z = Math.PI/2;
+      bar.position.set(0, -0.1 + i*0.07, 0);
+      group.add(bar);
+    }
+  } else if (avatarState.handProp === 'pipette_tube') {
+    const tubeMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 0.9, opacity: 0.5, transparent: true });
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.22, 12), tubeMat);
+    const liqMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 0.3 });
+    const liq = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.13, 12), liqMat);
+    liq.position.y = -0.04;
+    group.add(tube, liq);
+  }
+  return group;
+}
+
+function buildFloatingLabFlasks() {
+  if (floatingLabGroup) scene.remove(floatingLabGroup);
+  if (!avatarState.hasFloatingFlasks) return;
+
+  floatingLabGroup = new THREE.Group();
+
+  const glassMat = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, transmission: 0.95, opacity: 0.5, transparent: true, roughness: 0.1, ior: 1.5
+  });
+
+  const flaskGroup = new THREE.Group();
+  flaskGroup.position.set(-1.4, 1.4, 0.2);
+  const topFlask = new THREE.Mesh(new THREE.SphereGeometry(0.28, 24, 24), glassMat);
+  const redLiqMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, emissive: 0x991b1b, emissiveIntensity: 0.3 });
+  const redLiq = new THREE.Mesh(new THREE.SphereGeometry(0.25, 24, 16, 0, Math.PI*2, 0, Math.PI*0.6), redLiqMat);
+  redLiq.position.y = -0.05;
+  flaskGroup.add(topFlask, redLiq);
+
+  const molGroup = new THREE.Group();
+  molGroup.position.set(1.2, 1.8, 0.3);
+  const atomMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8 });
+  for (let i = 0; i < 4; i++) {
+    const atom = new THREE.Mesh(new THREE.SphereGeometry(0.05, 16, 16), atomMat);
+    atom.position.set((i-1.5)*0.15, Math.sin(i)*0.1, 0);
+    molGroup.add(atom);
+  }
+
+  floatingLabGroup.add(flaskGroup, molGroup);
+  scene.add(floatingLabGroup);
+}
+
+// ============ INIT ============
+function initThree() {
+  const container = document.getElementById('canvas-container');
+  const width = container.clientWidth || window.innerWidth;
+  const height = container.clientHeight || window.innerHeight;
+
+  scene = new THREE.Scene();
+  // Light paper background
+  scene.background = new THREE.Color(0xF5F1E8);
+  scene.fog = new THREE.Fog(0xF5F1E8, 8, 20);
+
+  camera = new THREE.PerspectiveCamera(45, width/height, 0.1, 100);
+  camera.position.set(0, 1.4, 2.5);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  container.appendChild(renderer.domElement);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.maxPolarAngle = Math.PI/2 + 0.05;
+  controls.minDistance = 1.2;
+  controls.maxDistance = 6.0;
+  controls.target.set(0, 1.2, 0);
+
+  // Grid in soft rule color
+  const grid = new THREE.GridHelper(20, 40, 0x9CA3AF, 0xE5E7EB);
+  grid.position.y = 0;
+  grid.material.transparent = true;
+  grid.material.opacity = 0.55;
+  scene.add(grid);
+
+  setupLighting();
+  buildAvatar();
+
+  window.addEventListener('resize', onWindowResize);
+  animate();
+}
+
+function setupLighting() {
+  ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+  scene.add(ambientLight);
+
+  mainSpotLight = new THREE.SpotLight(0xfff7ed, 1.6);
+  mainSpotLight.position.set(3, 5, 4);
+  mainSpotLight.castShadow = true;
+  scene.add(mainSpotLight);
+
+  bgLight = new THREE.PointLight(0xfed7aa, 0.6, 12);
+  bgLight.position.set(-2, 2.5, -2);
+  scene.add(bgLight);
+
+  rimLight = new THREE.DirectionalLight(0xcbd5e1, 0.7);
+  rimLight.position.set(0, 3, -4);
+  scene.add(rimLight);
+}
+
+// ============ AVATAR INTERACTIONS ============
+function selectQuickPill(key) {
+  playUiSound('click');
+  ['cute','virologist','cyber','quantum'].forEach(k => {
+    const el = document.getElementById(`pill-${k}`);
+    if (el) el.classList.remove('active');
+  });
+  const a = document.getElementById(`pill-${key}`);
+  if (a) a.classList.add('active');
+  applyPreset({ cute:'cute_genius', virologist:'virologist', cyber:'cyberchemist', quantum:'quantum' }[key]);
+}
+
+function applyPreset(presetKey) {
+  playUiSound('eureka');
+  if (presetKey === 'cute_genius') {
+    Object.assign(avatarState, {
+      skinColor:'#fce0d1', hairstyle:'cute_genius_hair', hairColor:'#5c3a21',
+      eyewear:'chibi_round_glasses', suitType:'vest_and_coat', coatColor:'#ffffff',
+      handProp:'folder_and_stethoscope'
+    });
+  } else if (presetKey === 'virologist') {
+    Object.assign(avatarState, {
+      skinColor:'#fce0d1', hairstyle:'cleanroom_hood', eyewear:'gas_mask',
+      suitType:'hazmat_suit', coatColor:'#f8fafc', handProp:'pipette_tube'
+    });
+  } else if (presetKey === 'cyberchemist') {
+    Object.assign(avatarState, {
+      skinColor:'#67e8f9', hairstyle:'cyber_ponytail', eyewear:'laser_visor',
+      suitType:'classic_coat', coatColor:'#0f172a', handProp:'dna_hologram'
+    });
+  } else if (presetKey === 'quantum') {
+    Object.assign(avatarState, {
+      skinColor:'#f3c2a2', hairstyle:'mad_scientist', eyewear:'safety_specs',
+      suitType:'classic_coat', coatColor:'#ffffff', handProp:'erlenmeyer'
+    });
+  }
+  buildAvatar();
+}
+
+function switchTab(key) {
+  playUiSound('click');
+  ['head','gear','suit','props'].forEach(t => {
+    const btn = document.getElementById(`tab-${t}`);
+    const panel = document.getElementById(`panel-${t}`);
+    if (t === key) {
+      btn.classList.add('active');
+      panel.classList.remove('hidden');
+    } else {
+      btn.classList.remove('active');
+      panel.classList.add('hidden');
+    }
+  });
+}
+
+function setSkinColor(color, name, el) {
+  avatarState.skinColor = color;
+  avatarState.skinName = name;
+  document.getElementById('skin-label').textContent = name;
+  if (el) {
+    el.parentElement.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+    el.classList.add('active');
+  }
+  buildAvatar();
+  playUiSound('click');
+}
+
+function setHairstyle(style) { avatarState.hairstyle = style; buildAvatar(); playUiSound('click'); }
+function setHairColor(color, el) {
+  avatarState.hairColor = color;
+  if (el) {
+    el.parentElement.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+    el.classList.add('active');
+  }
+  buildAvatar(); playUiSound('click');
+}
+function setEyeColor(color, el) {
+  avatarState.eyeColor = color;
+  if (el) {
+    el.parentElement.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+    el.classList.add('active');
+  }
+  buildAvatar(); playUiSound('click');
+}
+function setEyewear(type) { avatarState.eyewear = type; buildAvatar(); playUiSound('click'); }
+function setSuitType(type) { avatarState.suitType = type; buildAvatar(); playUiSound('click'); }
+function setCoatColor(color, el) {
+  avatarState.coatColor = color;
+  if (el) {
+    el.parentElement.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+    el.classList.add('active');
+  }
+  buildAvatar(); playUiSound('click');
+}
+function setHandProp(type) { avatarState.handProp = type; buildAvatar(); playUiSound('click'); }
+
+function toggleFloatingFlasks(checked) {
+  avatarState.hasFloatingFlasks = checked;
+  buildFloatingLabFlasks();
+  playUiSound('click');
+}
+
+function setPose(pose) { avatarState.pose = pose; playUiSound('click'); }
+
+function triggerEureka() {
+  avatarState.pose = 'eureka';
+  playUiSound('eureka');
+  if (window.confetti) confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 }, colors: ['#D97706','#1A1A1A','#4A5568'] });
+  setTimeout(() => avatarState.pose = 'idle', 2500);
+}
+
+function setLabEnvironment(env) {
+  avatarState.environment = env;
+  if (env === 'studio_warm') {
+    scene.background.setHex(0xF5F1E8);
+    ambientLight.color.setHex(0xffffff);
+    ambientLight.intensity = 0.85;
+  } else if (env === 'cleanroom') {
+    scene.background.setHex(0xEFF6FF);
+    ambientLight.color.setHex(0xDBEAFE);
+    ambientLight.intensity = 1.0;
+  } else if (env === 'biohazard') {
+    scene.background.setHex(0xFEF2F2);
+    ambientLight.color.setHex(0xFEE2E2);
+    ambientLight.intensity = 0.85;
+  } else if (env === 'cyber_quantum') {
+    scene.background.setHex(0xF5F3FF);
+    ambientLight.color.setHex(0xEDE9FE);
+    ambientLight.intensity = 0.9;
+  }
+  scene.fog.color.copy(scene.background);
+  playUiSound('click');
+}
+
+function setCameraAngle(angle) {
+  playUiSound('click');
+  document.querySelectorAll('.seg-btn').forEach(b => {
+    if (b.textContent.trim().match(/Kepala|Badan|Penuh/)) {
+      b.classList.remove('active');
+    }
+  });
+  const map = { head: 0, upper: 1, full: 2 };
+  const btns = document.querySelectorAll('.seg-btn');
+  btns.forEach(b => b.classList.remove('active'));
+
+  if (angle === 'head') { targetCamPos.set(0, 1.84, 0.85); targetCamTarget.set(0, 1.82, 0); }
+  else if (angle === 'upper') { targetCamPos.set(0, 1.45, 1.6); targetCamTarget.set(0, 1.35, 0); }
+  else { targetCamPos.set(0, 1.4, 2.5); targetCamTarget.set(0, 1.2, 0); }
+}
+
+function resetCamera() { setCameraAngle('full'); }
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else if (document.exitFullscreen) document.exitFullscreen();
+}
+
+function toggleSound() {
+  avatarState.soundEnabled = !avatarState.soundEnabled;
+  const btn = document.getElementById('btn-sound');
+  btn.innerHTML = avatarState.soundEnabled
+    ? '<i class="fa-solid fa-volume-high"></i>'
+    : '<i class="fa-solid fa-volume-xmark"></i>';
+}
+
+function toggleAutoRotate() {
+  avatarState.autoRotate = !avatarState.autoRotate;
+  controls.autoRotate = avatarState.autoRotate;
+  controls.autoRotateSpeed = 2.0;
+  const btn = document.getElementById('btn-autorotate');
+  btn.innerHTML = avatarState.autoRotate
+    ? '<i class="fa-solid fa-rotate"></i> Auto-Rotate: ON'
+    : '<i class="fa-solid fa-rotate"></i> Auto-Rotate: OFF';
+  playUiSound('click');
+}
+
+function toggleMobileSidebar() {
+  document.getElementById('customizer-sidebar').classList.toggle('open');
+}
+
+// ============ SAVE / LOAD ============
+function saveAvatar() {
+  try {
+    localStorage.setItem('labipa_avatar', JSON.stringify(avatarState));
+    showToast('Avatar tersimpan ✓');
+    playUiSound('eureka');
+  } catch (e) {
+    showToast('Gagal menyimpan');
+  }
+}
+
+function loadAvatar() {
+  try {
+    const saved = localStorage.getItem('labipa_avatar');
+    if (saved) {
+      Object.assign(avatarState, JSON.parse(saved));
+      buildAvatar();
+      const floatCheck = document.getElementById('check-floating-flasks');
+      if (floatCheck) floatCheck.checked = avatarState.hasFloatingFlasks;
+      const skinLabel = document.getElementById('skin-label');
+      if (skinLabel) skinLabel.textContent = avatarState.skinName || 'Fair Skin';
+      if (avatarState.autoRotate) toggleAutoRotate();
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function exportScreenshot() {
+  playUiSound('eureka');
+  renderer.setPixelRatio(2);
+  renderer.render(scene, camera);
+  try {
+    const link = document.createElement('a');
+    link.download = `avatar-${Date.now()}.png`;
+    link.href = renderer.domElement.toDataURL('image/png');
+    link.click();
+    showToast('Screenshot tersimpan ✓');
+  } catch (e) {
+    showToast('Export gagal');
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(
+    document.getElementById('canvas-container').clientWidth,
+    document.getElementById('canvas-container').clientHeight
+  );
+}
+
+// ============ ROOM PANEL ============
+function toggleRoomPanel() {
+  const collapsed = document.getElementById('room-collapsed');
+  const expanded = document.getElementById('room-expanded');
+  if (expanded.classList.contains('hidden')) {
+    collapsed.classList.add('hidden');
+    expanded.classList.remove('hidden');
+  } else {
+    collapsed.classList.remove('hidden');
+    expanded.classList.add('hidden');
+  }
+  playUiSound('click');
+}
+
+function switchRoomTab(key) {
+  playUiSound('click');
+  ['solo','create','join'].forEach(t => {
+    const btn = document.getElementById(`mp-tab-${t}`);
+    const panel = document.getElementById(`mp-panel-${t}`);
+    if (t === key) {
+      btn.classList.add('active');
+      panel.classList.remove('hidden');
+    } else {
+      btn.classList.remove('active');
+      panel.classList.add('hidden');
+    }
+  });
+}
+
+function setCapacity(n, el) {
+  roomState.capacity = n;
+  el.parentElement.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  playUiSound('click');
+}
+
+function setVisibility(v, el) {
+  roomState.visibility = v;
+  el.parentElement.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('vis-helper').textContent = v === 'private'
+    ? 'ⓘ Hanya yang punya kode bisa masuk'
+    : 'ⓘ Muncul di daftar room publik';
+  playUiSound('click');
+}
+
+// Auto format kode
+function formatRoomCode(value) {
+  let v = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  if (v.length > 2 && !v.startsWith('LAB')) v = 'LAB' + v;
+  if (v.length > 3 && v[3] !== '-') v = v.slice(0,3) + '-' + v.slice(3);
+  if (v.length > 8 && v[8] !== '-') v = v.slice(0,8) + '-' + v.slice(8);
+  return v.slice(0, 11);
+}
+
+document.getElementById('join-code')?.addEventListener('input', e => {
+  e.target.value = formatRoomCode(e.target.value);
+});
+document.getElementById('redeem-code')?.addEventListener('input', e => {
+  e.target.value = formatRoomCode(e.target.value);
+  const btn = document.getElementById('redeem-btn');
+  btn.disabled = e.target.value.length < 11;
+  const status = document.getElementById('redeem-status');
+  status.className = 'status-line';
+  status.textContent = '';
+});
+
+// Solo name validation
+document.getElementById('solo-name')?.addEventListener('input', e => {
+  const btn = document.getElementById('solo-start-btn');
+  btn.disabled = e.target.value.trim().length < 3;
+});
+
+// Create/Join name validation
+['create-name', 'join-name'].forEach(id => {
+  document.getElementById(id)?.addEventListener('input', e => {
+    const btnId = id === 'create-name' ? 'create-btn' : 'join-btn';
+    const extra = id === 'join-name' ? document.getElementById('join-code') : null;
+    const btn = document.getElementById(btnId);
+    const hasName = e.target.value.trim().length >= 3;
+    const hasCode = !extra || extra.value.replace(/[^A-Za-z0-9]/g, '').length >= 4;
+    btn.disabled = !(hasName && hasCode);
+  });
+});
+
+document.getElementById('join-code')?.addEventListener('input', () => {
+  const nameInput = document.getElementById('join-name');
+  const btn = document.getElementById('join-btn');
+  const hasName = nameInput && nameInput.value.trim().length >= 3;
+  const hasCode = document.getElementById('join-code').value.replace(/[^A-Za-z0-9]/g, '').length >= 4;
+  btn.disabled = !(hasName && hasCode);
+});
+
+// ============ ROOM ACTIONS ============
+// ============ INTEGRASI GAME ASLI (LabIPA 3D Studio) ============
+// Avatar + nama disimpan ke localStorage lalu handoff ke index.html
+// (game asli yang membaca ?mode=solo|create|join&name=...).
+function persistAvatarQuietly() {
+  try { localStorage.setItem('labipa_avatar', JSON.stringify(avatarState)); } catch (e) {}
+}
+function goToGame(params) {
+  persistAvatarQuietly();
+  const q = new URLSearchParams(params).toString();
+  window.location.href = 'index.html' + (q ? '?' + q : '');
+}
+
+function startSolo() {
+  const name = document.getElementById('solo-name').value.trim();
+  if (name.length < 3) return;
+  try { localStorage.setItem('labipa_player', JSON.stringify({ name })); } catch (e) {}
+  playUiSound('eureka');
+  showToast(`Selamat datang, ${name}! Membuka game...`);
+  setTimeout(() => goToGame({ mode: 'solo', name }), 500);
+}
+
+function createRoom() {
+  const name = document.getElementById('create-name').value.trim();
+  if (name.length < 3) return;
+
+  const btn = document.getElementById('create-btn');
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Membuka game...';
+  btn.disabled = true;
+
+  try { localStorage.setItem('labipa_player', JSON.stringify({ name })); } catch (e) {}
+  playUiSound('eureka');
+  showToast('Membuka game & membuat room...');
+  // Room asli dibuat oleh server via Socket.IO di index.html (?mode=create).
+  setTimeout(() => goToGame({ mode: 'create', name, max: roomState.capacity }), 500);
+}
+
+function copyRoomCode() {
+  navigator.clipboard.writeText(roomState.roomCode || '').then(() => {
+    showToast('Kode tersalin ✓');
+  }).catch(() => showToast('Gagal menyalin'));
+  playUiSound('click');
+}
+
+function shareRoomCode() {
+  if (navigator.share) {
+    navigator.share({
+      title: 'LABIPA 3D Studio',
+      text: `Ayo gabung ke room ${roomState.roomCode}!`,
+      url: window.location.href
+    }).catch(()=>{});
+  } else {
+    copyRoomCode();
+  }
+}
+
+function renderRoomPlayers() {
+  const el = document.getElementById('room-players');
+  el.innerHTML = '';
+  roomState.players.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-2 text-xs py-1';
+    row.innerHTML = `
+      <span class="w-6 h-6 flex items-center justify-center font-mono text-[10px] font-bold" style="background:var(--ink);color:var(--paper-hi)">${(p.name[0]||'?').toUpperCase()}</span>
+      <span class="flex-1 truncate">${p.name}</span>
+      ${p.host ? '<span class="label-mono" style="color:var(--safety)">HOST</span>' : ''}
+    `;
+    el.appendChild(row);
+  });
+  const empty = roomState.capacity - roomState.players.length;
+  for (let i = 0; i < empty; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'flex items-center gap-2 text-xs py-1 opacity-50';
+    slot.innerHTML = `
+      <span class="w-6 h-6 border border-dashed flex items-center justify-center" style="border-color:var(--rule)">·</span>
+      <span class="label-mono">MENUNGGU...</span>
+    `;
+    el.appendChild(slot);
+  }
+}
+
+function joinRoom() {
+  const name = document.getElementById('join-name').value.trim();
+  const raw = document.getElementById('join-code').value.trim();
+  if (name.length < 3 || raw.replace(/[^A-Za-z0-9]/g, '').length < 4) return;
+
+  // Game memakai kode room 6 karakter; normalisasi dari format LAB-XXXX-XX.
+  let code = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.startsWith('LAB')) code = code.slice(3);
+  code = code.slice(0, 6);
+
+  const btn = document.getElementById('join-btn');
+  const status = document.getElementById('join-status');
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Membuka game...';
+  btn.disabled = true;
+  status.className = 'status-line wait';
+  status.textContent = '[ WAIT ] Membuka game & bergabung ke room ' + code + '...';
+
+  try { localStorage.setItem('labipa_player', JSON.stringify({ name })); } catch (e) {}
+  playUiSound('eureka');
+  // Join asli dilakukan via Socket.IO di index.html (?mode=join&code=...).
+  setTimeout(() => goToGame({ mode: 'join', name, code }), 500);
+}
+
+function redeemCode() {
+  const input = document.getElementById('redeem-code');
+  const btn = document.getElementById('redeem-btn');
+  const status = document.getElementById('redeem-status');
+  const code = input.value.trim();
+
+  if (code.length < 11) return;
+
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+  btn.disabled = true;
+  status.className = 'status-line wait';
+  status.textContent = '[ WAIT ] Memeriksa kode...';
+
+  setTimeout(() => {
+    // Simulasi: kode valid kalau ada 'GOLD' atau 'VIP'
+    if (code.includes('GO') || code.includes('VI')) {
+      status.className = 'status-line ok';
+      status.textContent = '[ OK ] Kode ditukar: + Skin Hazmat Kuning';
+      playUiSound('eureka');
+    } else {
+      status.className = 'status-line err';
+      status.textContent = '[ ERR ] Kode tidak ditemukan';
+    }
+    btn.innerHTML = 'Redeem';
+    btn.disabled = false;
+  }, 1000);
+}
+
+// ============ TOAST ============
+let toastTimer;
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  toast.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.add('hidden'), 2200);
+}
+
+// ============ SOUND ============
+function playUiSound(type) {
+  if (!avatarState.soundEnabled) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    if (type === 'click') {
+      osc.frequency.setValueAtTime(600, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.05);
+      gain.gain.setValueAtTime(0.06, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+      osc.start(); osc.stop(ctx.currentTime + 0.05);
+    } else if (type === 'eureka') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(400, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(); osc.stop(ctx.currentTime + 0.3);
+    }
+  } catch(e) {}
+}
+
+// ============ ANIMATE ============
+function animate() {
+  requestAnimationFrame(animate);
+  const time = clock.getElapsedTime();
+
+  if (camera && controls) {
+    camera.position.lerp(targetCamPos, 0.05);
+    controls.target.lerp(targetCamTarget, 0.05);
+    controls.update();
+  }
+
+  if (eyesGroup.length > 0) {
+    if (Math.sin(time*3) > 0.98) eyesGroup.forEach(e => e.scale.y = THREE.MathUtils.lerp(e.scale.y, 0.1, 0.4));
+    else eyesGroup.forEach(e => e.scale.y = THREE.MathUtils.lerp(e.scale.y, 1.0, 0.3));
+  }
+
+  if (floatingLabGroup) {
+    floatingLabGroup.position.y = Math.sin(time*1.5)*0.04;
+    floatingLabGroup.rotation.y = Math.sin(time*0.5)*0.05;
+  }
+
+  if (avatarGroup) {
+    if (avatarState.pose === 'idle') {
+      avatarGroup.position.y = Math.sin(time*2)*0.015;
+    } else if (avatarState.pose === 'eureka') {
+      avatarGroup.rotation.y = Math.sin(time*8)*0.1;
+      avatarGroup.position.y = Math.abs(Math.sin(time*6))*0.08;
+    }
+  }
+
+  if (renderer && scene && camera) renderer.render(scene, camera);
+}
+
+function onWindowResize() {
+  if (!camera || !renderer) return;
+  const c = document.getElementById('canvas-container');
+  const w = c.clientWidth || window.innerWidth;
+  const h = c.clientHeight || window.innerHeight;
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+
+// ============ BOOT ============
+window.onload = () => {
+  initThree();
+  if (loadAvatar()) setTimeout(() => showToast('Avatar terakhir dimuat ✓'), 500);
+};
+</script>
+</body>
+</html>
