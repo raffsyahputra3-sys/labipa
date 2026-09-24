@@ -764,7 +764,7 @@ body {
         <div>
           <label class="label-mono block mb-2">Kode Room</label>
           <input type="text" id="join-code" class="field-mono" placeholder="LAB-XXXX-XX" maxlength="11">
-          <p class="label-mono mt-2">ⓘ Minta kode ini ke host room</p>
+          <p class="label-mono mt-2">ⓘ Kode 6 karakter dari host (mis. 7K2QDX)</p>
         </div>
 
         <button onclick="joinRoom()" id="join-btn" class="btn-ink w-full px-4 py-3 text-sm flex items-center justify-center gap-2">
@@ -1553,6 +1553,15 @@ function setVisibility(v, el) {
   playUiSound('click');
 }
 
+// Normalisasi kode join ke 6 karakter kode asli game.
+// Menerima "7K2QDX" maupun "LAB-7K2Q-DX". Aman karena kode asli
+// tidak pernah berawalan "LAB" (dihindari saat generate).
+function normalizeJoinCode(raw) {
+  let code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.startsWith('LAB')) code = code.slice(3);
+  return code.slice(0, 6);
+}
+
 // Auto format kode
 function formatRoomCode(value) {
   let v = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -1587,7 +1596,7 @@ document.getElementById('solo-name')?.addEventListener('input', e => {
     const extra = id === 'join-name' ? document.getElementById('join-code') : null;
     const btn = document.getElementById(btnId);
     const hasName = e.target.value.trim().length >= 3;
-    const hasCode = !extra || extra.value.replace(/[^A-Za-z0-9]/g, '').length >= 4;
+    const hasCode = !extra || normalizeJoinCode(extra.value).length === 6;
     btn.disabled = !(hasName && hasCode);
   });
 });
@@ -1596,7 +1605,7 @@ document.getElementById('join-code')?.addEventListener('input', () => {
   const nameInput = document.getElementById('join-name');
   const btn = document.getElementById('join-btn');
   const hasName = nameInput && nameInput.value.trim().length >= 3;
-  const hasCode = document.getElementById('join-code').value.replace(/[^A-Za-z0-9]/g, '').length >= 4;
+  const hasCode = normalizeJoinCode(document.getElementById('join-code').value).length === 6;
   btn.disabled = !(hasName && hasCode);
 });
 
@@ -1684,15 +1693,20 @@ function renderRoomPlayers() {
 function joinRoom() {
   const name = document.getElementById('join-name').value.trim();
   const raw = document.getElementById('join-code').value.trim();
-  if (name.length < 3 || raw.replace(/[^A-Za-z0-9]/g, '').length < 4) return;
-
-  // Game memakai kode room 6 karakter; normalisasi dari format LAB-XXXX-XX.
-  let code = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (code.startsWith('LAB')) code = code.slice(3);
-  code = code.slice(0, 6);
+  if (name.length < 3) return;
 
   const btn = document.getElementById('join-btn');
   const status = document.getElementById('join-status');
+
+  // Game memakai kode room 6 karakter (mis. 7K2QDX); format LAB-XXXX-XX juga diterima.
+  const code = normalizeJoinCode(raw);
+  if (code.length !== 6) {
+    status.className = 'status-line err';
+    status.textContent = '[ ERR ] Kode harus 6 karakter — minta kode ke host room';
+    playUiSound('click');
+    return;
+  }
+
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Membuka game...';
   btn.disabled = true;
   status.className = 'status-line wait';

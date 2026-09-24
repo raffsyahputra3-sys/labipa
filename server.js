@@ -37,7 +37,12 @@ const MP_COLORS = [
 function makeRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let s = '';
-  for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  // Hindari awalan "LAB" agar konsisten dengan normalisasi kode di landing
+  // (prefix LAB-XXXX-XX selalu aman dibuang)
+  do {
+    s = '';
+    for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  } while (s.startsWith('LAB'));
   return s;
 }
 
@@ -122,7 +127,10 @@ io.on('connection', (socket) => {
   socket.on('room:create', (data, cb) => {
     try {
       let code = (data && data.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-      if (!code) code = makeRoomCode();
+      // Autentikasi/generate: kode kosong / tidak valid → server buatkan yang unik
+      if (!code || code.length !== 6) {
+        do { code = makeRoomCode(); } while (rooms.has(code));
+      }
       if (rooms.has(code)) return cb && cb({ ok: false, error: 'Kode sudah dipakai, coba lagi.' });
 
       const max = Math.max(2, Math.min(16, parseInt(data.maxPlayers, 10) || 6));
@@ -144,10 +152,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ---------- JOIN ----------
+  // ---------- JOIN (autentikasi kode) ----------
   socket.on('room:join', (data, cb) => {
     try {
-      const code = (data && data.code || '').toUpperCase().trim();
+      const code = (data && data.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
       const room = rooms.get(code);
       if (!room) return cb && cb({ ok: false, error: 'Room "' + code + '" tidak ditemukan.' });
       if (room.peers.size >= room.maxPlayers) {

@@ -3566,7 +3566,12 @@ function mpSetStatus(el,msg,cls){
 }
 function mpMakeCode(){
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let s='';for(let i=0;i<6;i++)s+=chars[Math.floor(Math.random()*chars.length)];
+  let s='';
+  // Hindari awalan "LAB" (lihat normalizeJoinCode di landing)
+  do{
+    s='';
+    for(let i=0;i<6;i++)s+=chars[Math.floor(Math.random()*chars.length)];
+  }while(s.indexOf('LAB')===0);
   return s;
 }
 
@@ -3717,16 +3722,27 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
   MP.username=name;
   const btn=this;btn.disabled=true;
   mpSetStatus('mpCreateStatus','Membuat room…','wait');
-  MP.socket.emit('room:create',
-    {code:mpMakeCode(),name:name,maxPlayers:max,items:PHYS.serialize(),avatar:mpLoadAvatar()},
-    (res)=>{
-      btn.disabled=false;
-      if(!res||!res.ok){
-        mpSetStatus('mpCreateStatus','Gagal: '+((res&&res.error)||'coba lagi'));
-        return;
-      }
-      mpSetStatus('mpCreateStatus','Room dibuat: '+res.code,'ok');
-    });
+  let createTries=0;
+  const doCreate=function(code){
+    MP.socket.emit('room:create',
+      {code:code,name:name,maxPlayers:max,items:PHYS.serialize(),avatar:mpLoadAvatar()},
+      (res)=>{
+        // Tabrakan kode (sangat jarang) → coba lagi otomatis dengan kode baru
+        if(res&&!res.ok&&res.error&&res.error.indexOf('dipakai')!==-1&&createTries<3){
+          createTries++;
+          mpSetStatus('mpCreateStatus','Kode dipakai, mencoba kode baru…','wait');
+          doCreate(mpMakeCode());
+          return;
+        }
+        btn.disabled=false;
+        if(!res||!res.ok){
+          mpSetStatus('mpCreateStatus','Gagal: '+((res&&res.error)||'coba lagi'));
+          return;
+        }
+        mpSetStatus('mpCreateStatus','Room dibuat: '+res.code,'ok');
+      });
+  };
+  doCreate(mpMakeCode());
 });
 
 // ---------- JOIN ROOM ----------
