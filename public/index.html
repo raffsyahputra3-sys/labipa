@@ -821,17 +821,22 @@ const roomState = {
 };
 
 // ============ THREE.JS ============
+// PENTING: jangan sentuh THREE di top-level — kalau CDN 3D gagal dimuat,
+// seluruh script di bawah (validasi form, panel room) ikut mati.
+// Semua objek 3D diinisialisasi malas di dalam initThree().
 let scene, camera, renderer, controls;
 let avatarGroup, floatingLabGroup;
 let hairGroup, eyewearGroup, coatMesh, propGroup;
 let eyesGroup = [];
 let ambientLight, mainSpotLight, bgLight, rimLight;
-let clock = new THREE.Clock();
-let targetCamPos = new THREE.Vector3(0, 1.4, 2.5);
-let targetCamTarget = new THREE.Vector3(0, 1.2, 0);
+let clock = null;
+let targetCamPos = null;
+let targetCamTarget = null;
+function has3D() { return typeof window.THREE !== 'undefined' && !!scene; }
 
 // ============ BUILD AVATAR ============
 function buildAvatar() {
+  if (!has3D()) return;
   if (avatarGroup) scene.remove(avatarGroup);
   avatarGroup = new THREE.Group();
   eyesGroup = [];
@@ -1187,6 +1192,7 @@ function buildHandProp() {
 }
 
 function buildFloatingLabFlasks() {
+  if (!has3D()) return;
   if (floatingLabGroup) scene.remove(floatingLabGroup);
   if (!avatarState.hasFloatingFlasks) return;
 
@@ -1219,6 +1225,16 @@ function buildFloatingLabFlasks() {
 
 // ============ INIT ============
 function initThree() {
+  // Guard: tanpa THREE (CDN gagal/offline), lewati 3D — panel Mode Bermain tetap jalan.
+  if (typeof window.THREE === 'undefined' || typeof THREE.Scene === 'undefined') {
+    console.warn('[LABIPA] three.js tidak termuat — mode 3D dinonaktifkan, panel tetap berfungsi.');
+    showToast('Mode 3D offline — panel tetap bisa dipakai');
+    return false;
+  }
+  clock = new THREE.Clock();
+  targetCamPos = new THREE.Vector3(0, 1.4, 2.5);
+  targetCamTarget = new THREE.Vector3(0, 1.2, 0);
+
   const container = document.getElementById('canvas-container');
   const width = container.clientWidth || window.innerWidth;
   const height = container.clientHeight || window.innerHeight;
@@ -1392,6 +1408,7 @@ function triggerEureka() {
 
 function setLabEnvironment(env) {
   avatarState.environment = env;
+  if (!has3D()) { playUiSound('click'); return; }
   if (env === 'studio_warm') {
     scene.background.setHex(0xF5F1E8);
     ambientLight.color.setHex(0xffffff);
@@ -1424,6 +1441,7 @@ function setCameraAngle(angle) {
   const btns = document.querySelectorAll('.seg-btn');
   btns.forEach(b => b.classList.remove('active'));
 
+  if (!targetCamPos || !targetCamTarget) return;
   if (angle === 'head') { targetCamPos.set(0, 1.84, 0.85); targetCamTarget.set(0, 1.82, 0); }
   else if (angle === 'upper') { targetCamPos.set(0, 1.45, 1.6); targetCamTarget.set(0, 1.35, 0); }
   else { targetCamPos.set(0, 1.4, 2.5); targetCamTarget.set(0, 1.2, 0); }
@@ -1446,6 +1464,7 @@ function toggleSound() {
 
 function toggleAutoRotate() {
   avatarState.autoRotate = !avatarState.autoRotate;
+  if (!controls) { playUiSound('click'); return; }
   controls.autoRotate = avatarState.autoRotate;
   controls.autoRotateSpeed = 2.0;
   const btn = document.getElementById('btn-autorotate');
@@ -1489,6 +1508,7 @@ function loadAvatar() {
 
 function exportScreenshot() {
   playUiSound('eureka');
+  if (!has3D()) { showToast('Mode 3D offline'); return; }
   renderer.setPixelRatio(2);
   renderer.render(scene, camera);
   try {
@@ -1784,7 +1804,7 @@ function playUiSound(type) {
 // ============ ANIMATE ============
 function animate() {
   requestAnimationFrame(animate);
-  const time = clock.getElapsedTime();
+  const time = clock ? clock.getElapsedTime() : 0;
 
   if (camera && controls) {
     camera.position.lerp(targetCamPos, 0.05);
@@ -1826,8 +1846,14 @@ function onWindowResize() {
 
 // ============ BOOT ============
 window.onload = () => {
-  initThree();
-  if (loadAvatar()) setTimeout(() => showToast('Avatar terakhir dimuat ✓'), 500);
+  // 3D boleh gagal (CDN/offline) — panel Mode Bermain harus tetap jalan,
+  // dan opening tetap harus hilang.
+  try {
+    initThree();
+    if (loadAvatar()) setTimeout(() => showToast('Avatar terakhir dimuat ✓'), 500);
+  } catch (e) {
+    console.warn('[LABIPA] init 3D gagal:', e && e.message);
+  }
   // Opening gambar: tampil singkat lalu masuk studio
   try {
     const aud = document.getElementById('openingAudio');
