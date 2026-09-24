@@ -6,7 +6,7 @@
 <title>LabIPA · 3D Studio · Perancang Laboratorium IPA</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;1,9..144,400&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --paper:#EDE7D3;--paper-hi:#F5F0E0;--paper-lo:#E0D9C2;
@@ -1070,6 +1070,103 @@ div[data-mppanel="solo"] .cover-cta{
     stroke-dashoffset:0 !important;
   }
 }
+
+/* ============================================================
+   RESKIN COVER ala AVATAR STUDIO (landing page and 3d.html)
+   Scope: hanya #cover. Game di baliknya tidak berubah.
+   Paper #F5F1E8 · panel #FFFDF7 · ink #1A1A1A · safety #D97706
+   ============================================================ */
+#cover{
+  --paper:#F5F1E8;--paper-hi:#FFFDF7;--paper-lo:#EAE4D7;
+  --ink:#1A1A1A;--ink-2:#374151;
+  --rule:#9CA3AF;--rule-soft:#E5E7EB;
+  --chalk:#4A5568;
+  --alert:#DC2626;
+  --safety:#D97706;--safety-hi:#D97706;
+  --serif:'Fraunces',Georgia,serif;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+}
+#cover::before{opacity:.55}
+#cover::after{inset:12px}
+.cover-inner{
+  border:1.5px solid var(--ink);
+  box-shadow:5px 5px 0 var(--ink);
+  max-width:700px;
+}
+.cover-title{font-weight:800;letter-spacing:-.02em}
+.cover-title em{color:var(--ink-2)}
+.cover-rule{height:2px}
+/* Tombol ala .btn-ink Avatar Studio */
+.cover-cta{
+  border:1.5px solid var(--ink);
+  box-shadow:3px 3px 0 var(--ink);
+  transition:transform .1s ease-out,box-shadow .1s ease-out,background .15s;
+}
+.cover-cta:hover{
+  background:var(--safety);border-color:var(--ink);
+  transform:translate(-1px,-1px);
+  box-shadow:5px 5px 0 var(--ink);
+}
+.cover-cta:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+/* Varian ghost ala .btn-ghost Avatar Studio */
+.cover-cta.ghost{
+  background:transparent;color:var(--ink);
+  border:1.5px solid var(--ink);box-shadow:2px 2px 0 var(--ink);
+}
+.cover-cta.ghost:hover{background:var(--ink);color:var(--paper-hi);box-shadow:3px 3px 0 var(--ink)}
+/* Tab ala .tab-btn Avatar Studio */
+.mp-tabs{border-bottom:2px solid var(--ink);margin-bottom:0}
+.mp-tab{
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;
+  background:transparent;color:var(--rule);
+  border:none;border-bottom:2px solid transparent;border-radius:0;
+  padding:10px 6px;box-shadow:none;
+}
+.mp-tab:hover{background:transparent;color:var(--ink);border-color:transparent;transform:none;box-shadow:none}
+.mp-tab.on{
+  background:var(--paper-lo);color:var(--ink);
+  border:none;border-bottom:2px solid var(--ink);
+  box-shadow:none;transform:none;font-weight:700;
+}
+/* Panel lobby ala .paper-panel Avatar Studio */
+.mp-panel.on{
+  background:var(--paper-hi);
+  border:1.5px solid var(--ink);border-top:none;
+  box-shadow:3px 3px 0 var(--ink);
+  padding:18px 16px;
+}
+/* Input nama ala .field-input (serif, garis bawah) */
+.mp-field input[type="text"]{
+  font-family:var(--serif);font-size:16px;
+  background:transparent;border:none;border-bottom:1.5px solid var(--ink);
+  border-radius:0;padding:6px 0;box-shadow:none;
+}
+.mp-field input[type="text"]:focus{border-bottom:2px solid var(--safety)}
+.mp-field input[type="text"]::placeholder{color:var(--rule);font-style:italic;font-weight:400}
+/* Input kode ala .field-mono (mono, dashed) */
+.mp-field input#mpJoinCode{
+  font-family:var(--mono);font-size:16px;letter-spacing:.15em;text-transform:uppercase;
+  background:var(--paper);border:1.5px dashed var(--ink);border-radius:0;
+  padding:10px 12px;box-shadow:none;
+}
+.mp-field input#mpJoinCode:focus{border-style:solid;border-color:var(--safety);background:var(--paper-hi)}
+.mp-field select{
+  font-family:var(--mono);font-size:12px;
+  background:var(--paper-hi);border:1.5px solid var(--ink);border-radius:0;
+  box-shadow:2px 2px 0 var(--ink);
+}
+/* Status ala .status-line Avatar Studio */
+.mp-status{font-family:var(--mono);font-size:11px}
+.mp-status.ok{color:#15803D}
+.mp-status.wait{color:var(--chalk)}
+/* Chip avatar + avail ala .label-mono */
+#avatarChip,.mp-avail{
+  font-family:var(--mono);font-size:10px;font-weight:600;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--chalk);
+}
+#avatarChip b{color:var(--ink)}
+/* Kartu kode room ala dashed box Avatar Studio */
+.mp-code-share{border:1.5px dashed var(--ink);box-shadow:2px 2px 0 var(--ink)}
 </style>
 </head>
 <body>
@@ -1096,8 +1193,8 @@ div[data-mppanel="solo"] .cover-cta{
       <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-label="Logo Lab IPA">
         <defs>
           <linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#1B2A41"/>
-            <stop offset="1" stop-color="#3D4A5C"/>
+            <stop offset="0" stop-color="#1A1A1A"/>
+            <stop offset="1" stop-color="#4A5568"/>
           </linearGradient>
         </defs>
         <path d="M50 15 L70 15 L70 40 L85 90 Q88 105 75 105 L45 105 Q32 105 35 90 L50 40 Z"
@@ -1105,8 +1202,8 @@ div[data-mppanel="solo"] .cover-cta{
               stroke-linejoin="round" class="lg-path"/>
         <path d="M40 75 Q60 68 80 75 L85 90 Q88 105 75 105 L45 105 Q32 105 35 90 Z"
               fill="#2E5C3E" opacity="0.85" class="lg-fill"/>
-        <circle cx="52" cy="88" r="3" fill="#EDE7D3" opacity="0.7" class="lg-bubble"/>
-        <circle cx="65" cy="93" r="2" fill="#EDE7D3" opacity="0.7" class="lg-bubble"/>
+        <circle cx="52" cy="88" r="3" fill="#FFFDF7" opacity="0.7" class="lg-bubble"/>
+        <circle cx="65" cy="93" r="2" fill="#FFFDF7" opacity="0.7" class="lg-bubble"/>
         <path d="M102 20 L108 20 M105 17 L105 23"
               stroke="#D97706" stroke-width="3.5" stroke-linecap="round" class="lg-cross"/>
       </svg>
@@ -1169,7 +1266,7 @@ div[data-mppanel="solo"] .cover-cta{
           <span>Masuk Ruang Praktik</span>
           <span class="arrow">→</span>
         </button>
-        <a class="cover-cta" href="avatar.html" style="text-decoration:none;background:var(--paper);color:var(--ink);border:2px solid var(--ink);box-shadow:4px 4px 0 var(--ink)">
+        <a class="cover-cta ghost" href="avatar.html" style="text-decoration:none">
           <span>🎨 Avatar 3D</span>
         </a>
       </div>
