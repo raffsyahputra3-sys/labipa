@@ -3081,6 +3081,61 @@ const MAKERS={
 // placement, dan sync multiplayer TIDAK diubah. Saat offline / file
 // hilang, primitif asli tetap tampil (fallback otomatis).
 // =============================================================
+// =============================================================
+// PRD v2 Fitur #1 — COLOR RESTORATION: palet LABIPA untuk asset GLB.
+// GLB kadang datang tanpa warna (putih polos) atau MeshBasicMaterial
+// (flat, tak responsif cahaya). Aturan aman: material ber-texture (map)
+// TIDAK disentuh; hanya material polos keputihan yang diberi warna
+// sesuai tebak tipe dari nama file/mesh, dan basic → physical.
+// =============================================================
+const LABIPA_PALETTE={
+  wood:0x8B5A2B,woodLight:0xA0522D,
+  metal:0x6B7280,metalDark:0x374151,metalChrome:0xD1D5DB,
+  plastic:0xE5E7EB,plasticDark:0x9CA3AF,rubber:0x1F2937,
+  glass:0xE0F2FE,glassGreen:0x86EFAC,glassBlue:0x93C5FD,
+  plant:0x15803D,plantDark:0x166534,
+  paper:0xFFFDF7,ink:0x1A1A1A,safety:0xD97706,alert:0xDC2626
+};
+function detectMaterialType(meshName,path){
+  const name=String(meshName||'')+' '+String(path||'');
+  const n=name.toLowerCase();
+  if(/glass|flask|beaker|tube|vial|lens|screen|display|monitor/.test(n))return 'glass';
+  if(/plant|leaf|green|bush|grass|flower|pot/.test(n))return 'plant';
+  if(/table|desk|shelf|bookcase|cabinet|wood|drawer|frame/.test(n))return 'wood';
+  if(/metal|steel|chrome|iron|pole|stand|rack/.test(n))return 'metal';
+  if(/plastic|chair|stool|keyboard|mouse|button|paper|book/.test(n))return 'plastic';
+  return 'metal';
+}
+function applyColorToAsset(model,materialType,path){
+  // Kembalikan warna hidup ke model GLB tanpa merusak texture asli.
+  try{
+    const targetHex=LABIPA_PALETTE[materialType]!==undefined?LABIPA_PALETTE[materialType]:LABIPA_PALETTE.metal;
+    model.traverse(function(child){
+      if(!child.isMesh||!child.material)return;
+      const mats=Array.isArray(child.material)?child.material:[child.material];
+      const type=materialType||detectMaterialType(child.name,path);
+      const hex=LABIPA_PALETTE[type]!==undefined?LABIPA_PALETTE[type]:targetHex;
+      mats.forEach(function(mat,i){
+        try{
+          if(mat.map)return; // ber-texture → jangan override
+          const isWhite=!mat.color||mat.color.getHex()===0xffffff;
+          if(mat.type==='MeshBasicMaterial'){
+            // Upgrade ke PBR agar responsif lighting + HDRI env.
+            const up=new THREE.MeshPhysicalMaterial({
+              color:isWhite?hex:(mat.color?mat.color.getHex():hex),
+              roughness:0.5,metalness:0.1,envMapIntensity:1.0});
+            if(Array.isArray(child.material))child.material[i]=up;else child.material=up;
+            mat=up;
+          }else if(isWhite){
+            mat.color.setHex(hex);
+          }
+          if('envMapIntensity' in mat)mat.envMapIntensity=1.0;
+          mat.needsUpdate=true;
+        }catch(e){}
+      });
+    });
+  }catch(e){}
+}
 const GLB_MANIFEST={
   'table':{file:'assets/models/table.glb',fit:{w:1.8,h:0.80,d:0.9}},
   'teacher-desk':{file:'assets/models/desk.glb',fit:{w:1.6,h:0.76,d:0.8},extras:['computer']},
@@ -3111,6 +3166,7 @@ function placeProp(group,file,fit,x,y,z,ry){
         if(typeof PLACEMENT!=='undefined'&&PLACEMENT.ghost===group)return;
         const holder=new THREE.Group();
         holder.add(srcScene.clone(true));
+        applyColorToAsset(holder,null,file);
         const box=new THREE.Box3().setFromObject(holder);
         const size=new THREE.Vector3();box.getSize(size);
         if(size.x<1e-4||size.y<1e-4||size.z<1e-4)return;
@@ -3148,6 +3204,7 @@ function finishGLBUpgrade(group,itemKey,man,def,fit,srcScene){
     // Ghost placement tetap primitif + garis tepi (jangan diganggu).
     if(typeof PLACEMENT!=='undefined'&&PLACEMENT.ghost===group)return;
     const model=srcScene.clone(true);
+    applyColorToAsset(model,null,man.file);
     if(!glbFitInto(group,model,fit))return;
     if(man.extras&&man.extras.indexOf('computer')>=0)addComputerSet(group,fit);
   }catch(e){}
@@ -3188,6 +3245,7 @@ function addStaticPlant(x,z){
       new THREE.GLTFLoader().load('assets/models/pottedPlant.glb',function(gltf){
         try{
           const m=gltf.scene;
+          applyColorToAsset(m,'plant','assets/models/pottedPlant.glb');
           const box=new THREE.Box3().setFromObject(m);
           const size=new THREE.Vector3();box.getSize(size);
           if(size.y>1e-4){
@@ -3210,6 +3268,7 @@ function addStaticBanner(x,y,z,ry){
     new THREE.GLTFLoader().load('assets/models/space_wall-banner.glb',function(gltf){
       try{
         const m=gltf.scene;
+        applyColorToAsset(m,null,'assets/models/space_wall-banner.glb');
         const box=new THREE.Box3().setFromObject(m);
         const size=new THREE.Vector3();box.getSize(size);
         if(size.y>1e-4)m.scale.setScalar(1.1/size.y);
@@ -3228,6 +3287,81 @@ try{
   addStaticBanner(-2,1.9,-3.9,0);
   addStaticBanner(4,1.9,-3.9,0);
 }catch(e){}
+
+// =============================================================
+// PRD v2 Fitur #2 — COLLIDER DEBUG (Ctrl+D): kotak magenta untuk
+// semua PHYS bodies + STATIC_BLOCKERS. Snapshot saat toggle ON.
+// =============================================================
+window.DEBUG_COLLIDER=false;
+let _colliderHelpers=[];
+function toggleColliderDebug(){
+  try{
+    window.DEBUG_COLLIDER=!window.DEBUG_COLLIDER;
+    _colliderHelpers.forEach(function(h){
+      scene.remove(h);
+      if(h.geometry)h.geometry.dispose();
+      if(h.material)h.material.dispose();
+    });
+    _colliderHelpers=[];
+    if(window.DEBUG_COLLIDER){
+      const addBox=function(min,max){
+        const h=new THREE.Box3Helper(new THREE.Box3(min.clone(),max.clone()),0xff00ff);
+        scene.add(h);_colliderHelpers.push(h);
+      };
+      if(typeof PHYS!=='undefined'&&PHYS.bodies){
+        PHYS.bodies.forEach(function(b){
+          if(!b||!b.mesh||!b.aabb)return;
+          const p=b.mesh.position;
+          let hw=b.aabb.w/2,hd=b.aabb.d/2;
+          const ry=b.mesh.rotation?b.mesh.rotation.y:0;
+          if(Math.abs(Math.sin(ry))>0.7){const t=hw;hw=hd;hd=t;}
+          addBox(new THREE.Vector3(p.x-hw,p.y,p.z-hd),
+                 new THREE.Vector3(p.x+hw,p.y+b.aabb.h,p.z+hd));
+        });
+      }
+      if(typeof STATIC_BLOCKERS!=='undefined'){
+        STATIC_BLOCKERS.forEach(function(s){
+          if(!s)return;
+          addBox(new THREE.Vector3(s.x-s.hw,0,s.z-s.hd),
+                 new THREE.Vector3(s.x+s.hw,0.9,s.z+s.hd));
+        });
+      }
+      showToast('Debug collider ON ('+_colliderHelpers.length+' box)');
+    }else showToast('Debug collider OFF');
+    console.log('[COLLIDER] debug:',window.DEBUG_COLLIDER?'ON':'OFF',_colliderHelpers.length+'boxes');
+  }catch(e){}
+}
+document.addEventListener('keydown',function(e){
+  try{
+    if((e.ctrlKey||e.metaKey)&&String(e.key||'').toLowerCase()==='d'){
+      e.preventDefault();
+      toggleColliderDebug();
+    }
+  }catch(err){}
+});
+// Cek overlap kandidat placement vs furnitur lantai (toleransi 5cm).
+// Soft warning (tetap boleh taruh) — sesuai PRD "auto-geser atau warn".
+function checkPlacementOverlap(pos,def,rotY){
+  try{
+    if(typeof PHYS==='undefined'||!PHYS.bodies||!def||!def.aabb)return null;
+    let hw=def.aabb.w/2,hd=def.aabb.d/2;
+    if(Math.abs(Math.sin(rotY||0))>0.7){const t=hw;hw=hd;hd=t;}
+    const T=0.05;
+    for(let i=0;i<PHYS.bodies.length;i++){
+      const b=PHYS.bodies[i];
+      if(!b||!b.mesh||!b.aabb)continue;
+      if(b.mesh.position.y>1.4)continue; // item dinding/plafon diabaikan
+      let bw=b.aabb.w/2,bd=b.aabb.d/2;
+      const ry=b.mesh.rotation?b.mesh.rotation.y:0;
+      if(Math.abs(Math.sin(ry))>0.7){const t=bw;bw=bd;bd=t;}
+      const bx=b.mesh.position.x,bz=b.mesh.position.z;
+      if(pos.x+hw-T>bx-bw&&pos.x-hw+T<bx+bw&&pos.z+hd-T>bz-bd&&pos.z-hd+T<bz+bd){
+        return b;
+      }
+    }
+  }catch(e){}
+  return null;
+}
 
 // =============================================================
 // UI STATE
@@ -3675,6 +3809,12 @@ function confirmPlacement(){
   if(effSnap==='wall'&&!nearWall)effSnap='floor';
 
   scene.remove(PLACEMENT.ghost);PLACEMENT.ghost=null;
+  // PRD v2: peringatkan bila posisi baru menabrak furnitur lain (tetap boleh taruh).
+  const _hit=checkPlacementOverlap(pos,def,ghostRotY);
+  if(_hit){
+    console.warn('[COLLIDER] overlap:',def.label,'vs',(_hit.label||'objek lain'));
+    showToast('⚠️ Bertabrakan dengan '+(_hit.label||'objek lain')+' — digeser manual bila perlu');
+  }
   const real=def.make();
   real.position.copy(pos);real.rotation.set(0,ghostRotY,0);
   scene.add(real);
@@ -4177,8 +4317,9 @@ function mpLoadAvatar(){
     const out={};
     const hex=function(v){return (typeof v==='string'&&/^#[0-9a-fA-F]{6}$/.test(v))?v:null;};
     const str=function(v){return (typeof v==='string'&&/^[A-Za-z0-9_]+$/.test(v))?v.slice(0,32):null;};
-    ['skinColor','hairColor','eyeColor','coatColor'].forEach(function(k){const h=hex(a[k]);if(h)out[k]=h;});
-    ['hairstyle','eyewear','suitType'].forEach(function(k){const s=str(a[k]);if(s)out[k]=s;});
+    // PRD v2: SEMUA kustomisasi terbawa (vest, visor, skinName, handProp).
+    ['skinColor','hairColor','eyeColor','coatColor','vestColor','visorColor'].forEach(function(k){const h=hex(a[k]);if(h)out[k]=h;});
+    ['hairstyle','eyewear','suitType','skinName','handProp'].forEach(function(k){const s=str(a[k]);if(s)out[k]=s;});
     return Object.keys(out).length?out:null;
   }catch(e){return null;}
 }
@@ -4243,12 +4384,34 @@ function mpCreateAvatar(colorHex,name,av){
     const bridge=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.008,0.008),frameMat);
     bridge.position.set(0,1.30,0.135);group.add(bridge);
   }else if(ew==='safety_specs'||ew==='laser_visor'){
+    // PRD v2: warna visor mengikuti pilihan studio (visorColor).
+    const visorHex=new THREE.Color(av.visorColor||(ew==='laser_visor'?0xa855f7:0x10b981)).getHex();
     const visor=new THREE.Mesh(new THREE.BoxGeometry(0.20,0.05,0.03),
-      new THREE.MeshStandardMaterial({color:ew==='laser_visor'?0xa855f7:0x10b981,transparent:true,opacity:0.75}));
+      new THREE.MeshStandardMaterial({color:visorHex,transparent:true,opacity:0.75}));
     visor.position.set(0,1.30,0.13);group.add(visor);
   }else if(ew==='gas_mask'){
     const mask=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.10,0.06),simpleBoxMat(0x1f2937,0.7));
     mask.position.set(0,1.24,0.12);group.add(mask);
+  }
+  // ---- PRD v2: rompi + prop tangan sesuai pilihan Avatar Studio ----
+  if(av.vestColor){
+    const vest=new THREE.Mesh(new THREE.BoxGeometry(0.30,0.40,0.24),
+      simpleBoxMat(new THREE.Color(av.vestColor).getHex(),0.7));
+    vest.position.set(0,0.86,0);vest.castShadow=true;group.add(vest);
+  }
+  const hp=av.handProp||'none';
+  if(hp==='folder_and_stethoscope'||hp==='folder_journal'){
+    const folder=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.22,0.30),
+      simpleBoxMat(0x8B5A2B,0.6));
+    folder.position.set(0.30,0.62,0.10);folder.rotation.y=0.3;folder.castShadow=true;group.add(folder);
+  }else if(hp==='dna_hologram'){
+    const dna=new THREE.Mesh(new THREE.OctahedronGeometry(0.07),
+      new THREE.MeshStandardMaterial({color:0x22d3ee,emissive:0x0ea5e9,emissiveIntensity:0.9,transparent:true,opacity:0.9}));
+    dna.position.set(0.30,0.72,0.10);group.add(dna);
+  }else if(hp==='pipette_tube'){
+    const pip=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.008,0.22,8),
+      new THREE.MeshPhysicalMaterial({color:0xE0F2FE,roughness:0.1,transparent:true,opacity:0.8}));
+    pip.position.set(0.30,0.66,0.10);pip.rotation.z=0.25;group.add(pip);
   }
   // Lengan
   const armGeo=new THREE.BoxGeometry(0.08,0.42,0.08);

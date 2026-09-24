@@ -70,10 +70,14 @@ function sanitizeAvatar(a) {
   const hair = hex(a.hairColor); if (hair) out.hairColor = hair;
   const eye = hex(a.eyeColor); if (eye) out.eyeColor = eye;
   const coat = hex(a.coatColor); if (coat) out.coatColor = coat;
+  // PRD v2: field tambahan agar avatar studio === avatar game (100% match).
+  const vest = hex(a.vestColor); if (vest) out.vestColor = vest;
+  const visor = hex(a.visorColor); if (visor) out.visorColor = visor;
   const hs = str(a.hairstyle, 32); if (hs) out.hairstyle = hs;
   const ew = str(a.eyewear, 32); if (ew) out.eyewear = ew;
   const st = str(a.suitType, 32); if (st) out.suitType = st;
   const sn = str(a.skinName, 32); if (sn) out.skinName = sn;
+  const hp = str(a.handProp, 32); if (hp) out.handProp = hp;
   return Object.keys(out).length ? out : null;
 }
 

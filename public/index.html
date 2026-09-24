@@ -1166,6 +1166,7 @@ function buildAvatar() {
 
   scene.add(avatarGroup);
   buildFloatingLabFlasks();
+  scheduleAvatarSync(); // auto-persist + broadcast tiap kustomisasi berubah
 }
 
 function buildEyewear() {
@@ -1781,6 +1782,41 @@ function generateRoomCode() {
 // ---- PRD 5.2/5.3/5.4: room demo store + BroadcastChannel ----
 let roomChannel = null;
 try { if ('BroadcastChannel' in window) roomChannel = new BroadcastChannel('labipa-room'); } catch (e) { roomChannel = null; }
+// ---- PRD v2 Fitur #3: sync avatar antar tab + auto-persist (debounce 500ms) ----
+let avatarChannel = null;
+try { if ('BroadcastChannel' in window) avatarChannel = new BroadcastChannel('labipa-avatar'); } catch (e) { avatarChannel = null; }
+let _avatarSyncTimer = null;
+let _applyingRemoteAvatar = false;
+function scheduleAvatarSync() {
+  // Dipanggil di akhir buildAvatar(): setiap kustomisasi otomatis tersimpan
+  // (localStorage, antar sesi) + disiarkan ke tab lain. Tanpa ini user harus
+  // klik "Simpan" manual dan tab lain tidak ikut update.
+  if (_applyingRemoteAvatar) return;
+  if (_avatarSyncTimer) clearTimeout(_avatarSyncTimer);
+  _avatarSyncTimer = setTimeout(() => {
+    _avatarSyncTimer = null;
+    try {
+      avatarState.lastUpdated = Date.now();
+      persistAvatarQuietly();
+    } catch (e) {}
+    try {
+      if (avatarChannel) avatarChannel.postMessage({ type: 'AVATAR_UPDATED', avatar: { ...avatarState } });
+    } catch (e) {}
+  }, 500);
+}
+if (avatarChannel) {
+  avatarChannel.onmessage = (e) => {
+    try {
+      const d = e.data || {};
+      if (d.type !== 'AVATAR_UPDATED' || !d.avatar || typeof d.avatar !== 'object') return;
+      _applyingRemoteAvatar = true;
+      Object.assign(avatarState, d.avatar);
+      if (typeof buildAvatar === 'function') buildAvatar();
+      _applyingRemoteAvatar = false;
+      try { persistAvatarQuietly(); } catch (err) {}
+    } catch (err) { _applyingRemoteAvatar = false; }
+  };
+}
 function demoRoomStore() {
   try { return JSON.parse(localStorage.getItem('labipa.rooms') || '{}'); } catch (e) { return {}; }
 }
