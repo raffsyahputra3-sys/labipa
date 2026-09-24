@@ -4177,8 +4177,13 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
 document.getElementById('btnMpJoin').addEventListener('click',function(){
   if(!MP.ready){mpSetStatus('mpJoinStatus','Belum terhubung ke server.');return;}
   const name=(document.getElementById('mpJoinName').value||'').trim().slice(0,16)||'Pemain';
-  const code=(document.getElementById('mpJoinCode').value||'').trim().toUpperCase();
-  if(!code){mpSetStatus('mpJoinStatus','Masukkan kode room dari host.');return;}
+  const rawJoin=(document.getElementById('mpJoinCode').value||'').trim().toUpperCase();
+  if(!rawJoin){mpSetStatus('mpJoinStatus','Masukkan kode room dari host.');return;}
+  // BUG#1: terima tempelan format display "LAB-XXXX-XX" — normalisasi seperti studio.
+  let code=rawJoin.replace(/[^A-Z0-9]/g,'');
+  if(code.indexOf('LAB')===0)code=code.slice(3);
+  code=code.slice(0,6);
+  if(code.length!==6){mpSetStatus('mpJoinStatus','Kode harus 6 karakter (mis. 7K2QDX) atau format LAB-XXXX-XX.');return;}
   MP.username=name;
   MP.lastMode='join';
   const btn=this;btn.disabled=true;
@@ -5434,7 +5439,11 @@ const openingEl=document.getElementById('opening');
 playOpeningJingle();
 setTimeout(function(){
   if(openingEl)openingEl.classList.add('hide');
-  document.getElementById('cover').style.display='grid';
+  // BUG#2: alur overlay (lobby baru, ?mode=...) — JANGAN tampilkan splash/cover
+  // lama di dalam iframe; cover hanya muncul sebagai fallback bila auto-mulai gagal.
+  let hm='';
+  try{hm=new URL(location.href).searchParams.get('mode')||'';}catch(e){}
+  if(!hm)document.getElementById('cover').style.display='grid';
 },1800);
 // =============================================================
 // COVER — Backsound stempel saat masuk (user gesture → boleh autoplay)
@@ -5562,7 +5571,13 @@ document.getElementById('btnStart').addEventListener('click',function(e){
     var tries=0;
     var timer=setInterval(function(){
       tries++;
-      if(tries>60){clearInterval(timer);return;}
+      // BUG#2: jangan diam saat server tak terjangkau — tampilkan cover sebagai
+      // fallback manual + kabari parent agar studio bisa kasih toast/opsi keluar.
+      if(tries>60){clearInterval(timer);
+        try{document.getElementById('cover').style.display='grid';}catch(e){}
+        try{if(window.parent&&window.parent!==window)window.parent.postMessage({src:'labipa-game',type:'labipa-handoff-failed',mode:mode},'*');}catch(e){}
+        try{showToast('Gagal auto-mulai — server tak terjangkau. Coba manual / cek koneksi.');}catch(e){}
+        return;}
       if(mode==='solo'){
         clearInterval(timer);
         document.getElementById('btnStart').click();

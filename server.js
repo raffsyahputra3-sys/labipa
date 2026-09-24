@@ -165,7 +165,11 @@ io.on('connection', (socket) => {
   // ---------- JOIN (autentikasi kode) ----------
   socket.on('room:join', (data, cb) => {
     try {
-      const code = (data && data.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+      // BUG#1: terima format display "LAB-XXXX-XX" (hasil copy tombol Salin) —
+      // buang prefix LAB seperti normalizeJoinCode di client, lalu ambil 6 char.
+      let code = (data && data.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (code.startsWith('LAB')) code = code.slice(3);
+      code = code.slice(0, 6);
       const room = rooms.get(code);
       if (!room) return cb && cb({ ok: false, error: 'Room "' + code + '" tidak ditemukan.' });
       if (room.peers.size >= room.maxPlayers) {

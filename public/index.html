@@ -865,7 +865,7 @@ body {
 </div>
 
 <!-- ============ TOAST ============ -->
-<div id="toast" class="fixed left-1/2 z-50 pointer-events-none hidden" style="bottom:100px">
+<div id="toast" class="fixed left-1/2 pointer-events-none hidden" style="bottom:100px;z-index:120">
   <div class="paper-panel px-4 py-2.5 text-xs font-semibold flex items-center gap-2 toast-anim">
     <i class="fa-solid fa-check-circle" style="color:#15803D"></i>
     <span id="toast-msg">Saved!</span>
@@ -1882,6 +1882,8 @@ function runLoadingBar(done) {
 }
 function transitionToGame(session, params) {
   setAppState('loading');
+  // BUG#2: pastikan splash opening tidak nyangkut menutupi game.
+  try { const op = document.getElementById('opening'); if (op) op.classList.add('hide'); } catch (e) {}
   runLoadingBar(() => {
     const layer = document.getElementById('game-layer');
     const frame = document.getElementById('game-frame');
@@ -1926,6 +1928,9 @@ function exitToStudio(skipConfirm) {
   } catch (e) {}
   togglePauseMenu(false);
   document.getElementById('game-layer').classList.remove('show', 'fade-in');
+  // BUG#2: loading yang nyangkut (exit saat loading) ikut disembunyikan.
+  try { document.getElementById('game-loading').classList.remove('show'); } catch (e) {}
+  try { if (studioNet.handoffTimer) { clearTimeout(studioNet.handoffTimer); studioNet.handoffTimer = null; } } catch (e) {}
   // restore tombol create/join
   const cb = document.getElementById('create-btn');
   if (cb) { cb.innerHTML = 'Buat Room <i class="fa-solid fa-arrow-right"></i>'; cb.disabled = false; }
@@ -1983,6 +1988,8 @@ window.addEventListener('message', function (e) {
     if (!d || d.src !== 'labipa-game') return;
     if (d.type === 'labipa-room-code' && d.code) {
       // Kode otoritatif server → sinkron ke SEMUA UI studio (BUG#1).
+      // Watchdog ikut dimatikan: handoff terbukti berhasil.
+      try { if (studioNet.handoffTimer) { clearTimeout(studioNet.handoffTimer); studioNet.handoffTimer = null; } } catch (e) {}
       const six = normalizeJoinCode(d.code);
       roomState.serverCode = six;
       roomState.roomCode = d.formatted || formatDisplayCode(six);
@@ -1996,6 +2003,11 @@ window.addEventListener('message', function (e) {
     } else if (d.type === 'labipa-exit') {
       // User klik Keluar di dalam game (sudah confirm di sana) → tutup overlay.
       exitToStudio(true);
+    } else if (d.type === 'labipa-handoff-failed') {
+      // BUG#2: game gagal auto-mulai (server tak terjangkau) — beri tahu user di studio.
+      try { if (studioNet.handoffTimer) { clearTimeout(studioNet.handoffTimer); studioNet.handoffTimer = null; } } catch (e) {}
+      showToast('Game gagal mulai — server tak terjangkau. Coba Keluar lalu ulangi.');
+      console.warn('[Room] handoff gagal di game:', d.mode);
     } else if (d.type === 'labipa-mp-state') {
       // Fungsi lobby lama yang pindah ke baru: pemain, host, mic tampil di HUD studio.
       try {
@@ -2035,6 +2047,21 @@ function goToGame(params) {
     visibility: roomState.visibility
   });
   persistUnifiedState();
+  // BUG#2 watchdog: mode create/join WAJIB lapor kode dalam 25 dtk.
+  // Kalau tidak (server mati/offline), beri tahu user — jangan diam dengan layar gelap.
+  try {
+    if (studioNet.handoffTimer) clearTimeout(studioNet.handoffTimer);
+    studioNet.handoffTimer = null;
+    if (mode === 'create' || mode === 'join') {
+      studioNet.handoffTimer = setTimeout(() => {
+        studioNet.handoffTimer = null;
+        if (appState === 'in_game' && !roomState.serverCode) {
+          showToast('Gagal terhubung ke server — cek koneksi / coba Keluar lalu ulangi');
+          console.warn('[Room] handoff timeout: tidak ada labipa-room-code dalam 25 dtk');
+        }
+      }, 25000);
+    }
+  } catch (e) {}
   transitionToGame(session, params);
 }
 
@@ -2236,7 +2263,9 @@ function redeemCode() {
   const input = document.getElementById('redeem-code');
   const btn = document.getElementById('redeem-btn');
   const status = document.getElementById('redeem-status');
-  const code = input.value.trim().toUpperCase();
+  // BUG#1: normalisasi total (spasi dalam, huruf kecil) + trace debug.
+  const code = (input.value || '').trim().toUpperCase().replace(/\s+/g, '');
+  console.log('[REDEEM] input:', JSON.stringify(code), 'len:', code.length);
 
   if (!code) return;
 
@@ -2248,6 +2277,7 @@ function redeemCode() {
   setTimeout(() => {
     try {
       const def = REDEEM_CODES[code];
+      console.log('[REDEEM] match:', def ? def.label : null);
       if (def) {
         if (!redeemRewards.includes(code)) {
           redeemRewards.push(code);
@@ -2259,7 +2289,11 @@ function redeemCode() {
         playUiSound('eureka');
       } else {
         status.className = 'status-line err';
-        status.textContent = '[ ERR ] Kode tidak valid';
+        // Bedakan kode ROOM (buat join) vs kode REDEEM (hadiah) agar user tidak bingung.
+        const looksRoom = /^LAB-[A-Z0-9]{4}-[A-Z0-9]{2}$/.test(code) && !REDEEM_CODES[code];
+        status.textContent = looksRoom
+          ? '[ ERR ] Itu kode ROOM (untuk Gabung), bukan kode redeem hadiah'
+          : '[ ERR ] Kode tidak valid';
         input.classList.add('shake');
         setTimeout(() => input.classList.remove('shake'), 300);
         playUiSound('click');
