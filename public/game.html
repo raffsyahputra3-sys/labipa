@@ -3108,6 +3108,31 @@ function detectMaterialType(meshName,path){
 }
 function applyColorToAsset(model,materialType,path){
   // Kembalikan warna hidup ke model GLB tanpa merusak texture asli.
+  // + PBR tuning: SEMUA material (termasuk yang sudah berwarna) dapat
+  // roughness/metalness/envMapIntensity sesuai namanya — ini yang bikin
+  // kayu terlihat kayu, metal mengkilap, kaca memantul, bukan flat monoton.
+  const tuneRules=[
+    [/wood|drawer/i,{roughness:0.7,metalness:0.0,env:0.7}],
+    [/metal|steel|chrome|iron|colormap/i,{roughness:0.35,metalness:0.8,env:1.0}],
+    [/plant|leaf|green|bush/i,{roughness:0.8,metalness:0.0,env:0.5}],
+    [/carpet|fabric|cushion|cloth/i,{roughness:0.95,metalness:0.0,env:0.4}],
+    [/plastic|keyboard|mouse|button|book|paper/i,{roughness:0.45,metalness:0.05,env:0.8}],
+    [/glass|screen|display|lens|monitor/i,{roughness:0.15,metalness:0.1,env:1.2}]
+  ];
+  function tunePBR(mat,meshName){
+    try{
+      if(!mat||(mat.type!=='MeshStandardMaterial'&&mat.type!=='MeshPhysicalMaterial'))return;
+      const n=String((mat.name||'')+' '+meshName).toLowerCase();
+      for(let i=0;i<tuneRules.length;i++){
+        if(tuneRules[i][0].test(n)){
+          const t=tuneRules[i][1];
+          mat.roughness=t.roughness;mat.metalness=t.metalness;
+          if('envMapIntensity' in mat)mat.envMapIntensity=t.env;
+          break;
+        }
+      }
+    }catch(e){}
+  }
   try{
     const targetHex=LABIPA_PALETTE[materialType]!==undefined?LABIPA_PALETTE[materialType]:LABIPA_PALETTE.metal;
     model.traverse(function(child){
@@ -3130,6 +3155,7 @@ function applyColorToAsset(model,materialType,path){
             mat.color.setHex(hex);
           }
           if('envMapIntensity' in mat)mat.envMapIntensity=1.0;
+          tunePBR(mat,child.name||'');
           mat.needsUpdate=true;
         }catch(e){}
       });
