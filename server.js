@@ -17,7 +17,13 @@ const io = new Server(server, {
   },
   maxHttpBufferSize: 1e6,   // 1 MB — cukup untuk chunk voice
   pingTimeout: 10000,
-  pingInterval: 5000
+  pingInterval: 5000,
+  // Konektivitas: pulihkan sesi saat reconnect singkat (putus <2 mnt)
+  // tanpa handshake ulang penuh — melengkapi auto-rejoin di client.
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000,
+    skipMiddlewares: true
+  }
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

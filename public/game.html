@@ -1260,15 +1260,15 @@ div[data-mppanel="solo"] .cover-cta{
         <label for="mpSoloName">Nama kamu (opsional)</label>
         <input type="text" id="mpSoloName" maxlength="16" placeholder="mis. Arina/Rafi">
       </div>
-      <div id="avatarChip" class="mp-avail" style="margin:0 0 12px">Avatar 3D: belum dikustom — <a href="index.html" style="color:inherit;font-weight:700">buka Avatar Studio →</a></div>
+      <div id="avatarChip" class="mp-avail" style="margin:0 0 12px">Avatar 3D: belum dikustom — <button id="avatarStudioBtn" type="button" style="color:inherit;font-weight:700;text-decoration:underline;background:none;border:none;cursor:pointer;font:inherit">buka Avatar Studio →</button></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="cover-cta" id="btnStart" type="button">
           <span>Masuk Ruang Praktik</span>
           <span class="arrow">→</span>
         </button>
-        <a class="cover-cta ghost" href="index.html" style="text-decoration:none">
+        <button class="cover-cta ghost" id="btnAvatarStudio" type="button">
           <span>🎨 Avatar 3D</span>
-        </a>
+        </button>
       </div>
       <audio id="sfxStamp" preload="auto">
         <source src="stamp.wav" type="audio/wav">
@@ -1650,6 +1650,8 @@ div[data-mppanel="solo"] .cover-cta{
 <div id="err"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 (function(){
@@ -1893,6 +1895,22 @@ const rim=new THREE.DirectionalLight(0xFFD8A0,0.4);
 rim.position.set(10,15,-40);scene.add(rim);
 // LAYER 4 AMBIENT (hemisphere tanah-langit)
 const hemi=new THREE.HemisphereLight(0xD6E2E5,0x8A7B5C,0.55);scene.add(hemi);
+// LAYER 5 ENVIRONMENT (Poly Haven CC0 studio HDRI — opsional; gagal diam-diam saat offline)
+try{
+  if(typeof THREE.RGBELoader!=='undefined'){
+    const _rl=new THREE.RGBELoader();
+    if(_rl.setDataType)_rl.setDataType(THREE.UnsignedByteType);
+    _rl.load('assets/env/studio_1k.hdr',function(tex){
+      try{
+        const pm=new THREE.PMREMGenerator(renderer);
+        if(pm.compileEquirectangularShader)pm.compileEquirectangularShader();
+        const envRT=pm.fromEquirectangular(tex);
+        scene.environment=envRT.texture;
+        tex.dispose();pm.dispose();
+      }catch(e){}
+    },undefined,function(){});
+  }
+}catch(e){}
 const labLights=[];
 [[-3,-2.5],[1,-2.5],[5,-2.5],[-3,2.5],[1,2.5],[5,2.5]].forEach(function(p){
   const pl=new THREE.PointLight(0xFFF0D8,0.8,12,2);
@@ -2171,6 +2189,20 @@ const PLX=rPrep.x-rPrep.w/2, SLX=rStor.x-rStor.w/2;
 const PREP_BZ=rPrep.z-rPrep.d/2, PREP_FZ=rPrep.z+rPrep.d/2;
 const STOR_BZ=rStor.z-rStor.d/2, STOR_FZ=rStor.z+rStor.d/2;
 
+function floorTexUpgrade(mat,w,d){
+  // Poly Haven CC0 ubin — upgrade async; gagal diam-diam saat offline.
+  try{
+    new THREE.TextureLoader().load('assets/env/floor_tiles_1k.jpg',function(tex){
+      try{
+        tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+        tex.repeat.set(Math.max(2,Math.round(w/2)),Math.max(2,Math.round(d/2)));
+        tex.anisotropy=renderer.capabilities.getMaxAnisotropy();
+        tex.encoding=THREE.sRGBEncoding;
+        mat.map=tex;mat.needsUpdate=true;
+      }catch(e){}
+    },undefined,function(){});
+  }catch(e){}
+}
 function addFloor(w,d,x,z,color,variant){
   let mat;
   if(variant==='prep'){
@@ -2184,6 +2216,7 @@ function addFloor(w,d,x,z,color,variant){
       map:PROC.tile(0xCFC5AB,0x8f866e,5,60,Math.max(1,Math.round(w/3.6)),Math.max(1,Math.round(d/3.6)))});
   }
   if(mat.map)mat.map.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  if(variant!=='prep'&&variant!=='stor')floorTexUpgrade(mat,w,d);
   const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),mat);
   f.position.set(x,-0.05,z);f.receiveShadow=true;scene.add(f);
 }
@@ -3042,6 +3075,161 @@ const MAKERS={
 };
 
 // =============================================================
+// ASET 3D EKSTERNAL (Kenney CC0 + Poly Haven CC0)
+// Upgrade visual bertahap: make() tetap sinkron & aman; model GLB
+// dimuat async lalu menggantikan isi primitif grup. aabb, collider,
+// placement, dan sync multiplayer TIDAK diubah. Saat offline / file
+// hilang, primitif asli tetap tampil (fallback otomatis).
+// =============================================================
+const GLB_MANIFEST={
+  'table':{file:'assets/models/table.glb',fit:{w:1.8,h:0.80,d:0.9}},
+  'teacher-desk':{file:'assets/models/desk.glb',fit:{w:1.6,h:0.76,d:0.8},extras:['computer']},
+  'chair':{file:'assets/models/stoolBar.glb',fit:{w:0.5,h:0.6,d:0.5}},
+  'cabinet':{file:'assets/models/kitchenCabinet.glb',fit:{w:0.9,h:1.85,d:0.5}},
+  'board':{file:'assets/models/space_display-wall.glb'}
+};
+const GLB_CACHE={};
+function glbFitInto(group,model,fit){
+  // Skala seragam agar bbox model pas dalam target (w,h,d), dasar di y=0.
+  const box=new THREE.Box3().setFromObject(model);
+  const size=new THREE.Vector3();box.getSize(size);
+  if(size.x<1e-4||size.y<1e-4||size.z<1e-4)return false;
+  model.scale.setScalar(Math.min(fit.w/size.x,fit.h/size.y,fit.d/size.z));
+  const box2=new THREE.Box3().setFromObject(model);
+  const c=new THREE.Vector3();box2.getCenter(c);
+  model.position.x-=c.x;model.position.z-=c.z;model.position.y-=box2.min.y;
+  model.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+  while(group.children.length)group.remove(group.children[0]);
+  group.add(model);
+  return true;
+}
+function placeProp(group,file,fit,x,y,z,ry){
+  try{
+    const key='prop|'+file;
+    const done=function(srcScene){
+      try{
+        if(typeof PLACEMENT!=='undefined'&&PLACEMENT.ghost===group)return;
+        const holder=new THREE.Group();
+        holder.add(srcScene.clone(true));
+        const box=new THREE.Box3().setFromObject(holder);
+        const size=new THREE.Vector3();box.getSize(size);
+        if(size.x<1e-4||size.y<1e-4||size.z<1e-4)return;
+        const sc=Math.min(fit.w/size.x,fit.h/size.y,fit.d/size.z);
+        holder.scale.setScalar(sc);
+        const box2=new THREE.Box3().setFromObject(holder);
+        const c=new THREE.Vector3();box2.getCenter(c);
+        holder.position.set(x-c.x,y-box2.min.y,z-c.z);
+        holder.rotation.y=ry||0;
+        holder.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+        group.add(holder);
+      }catch(e){}
+    };
+    if(GLB_CACHE[key]){done(GLB_CACHE[key]);return;}
+    if(GLB_CACHE[key+'_loading'])return;
+    GLB_CACHE[key+'_loading']=true;
+    new THREE.GLTFLoader().load(file,function(gltf){
+      GLB_CACHE[key]=gltf.scene;GLB_CACHE[key+'_loading']=false;done(gltf.scene);
+    },undefined,function(){GLB_CACHE[key]=null;GLB_CACHE[key+'_loading']=false;});
+  }catch(e){}
+}
+function addComputerSet(group,fit){
+  // Set komputer di atas meja guru (layar + keyboard + mouse) + tower di samping.
+  try{
+    if(typeof THREE.GLTFLoader==='undefined')return;
+    const topY=fit.h;
+    placeProp(group,'assets/models/computerScreen.glb',{w:0.55,h:0.40,d:0.30},0,topY,-0.20,0);
+    placeProp(group,'assets/models/computerKeyboard.glb',{w:0.45,h:0.05,d:0.16},0,topY,0.10,0);
+    placeProp(group,'assets/models/computerMouse.glb',{w:0.07,h:0.05,d:0.11},0.32,topY,0.10,0);
+    placeProp(group,'assets/models/space_computer-system.glb',{w:0.24,h:0.50,d:0.45},0.95,0,0,0);
+  }catch(e){}
+}
+function finishGLBUpgrade(group,itemKey,man,def,fit,srcScene){
+  try{
+    // Ghost placement tetap primitif + garis tepi (jangan diganggu).
+    if(typeof PLACEMENT!=='undefined'&&PLACEMENT.ghost===group)return;
+    const model=srcScene.clone(true);
+    if(!glbFitInto(group,model,fit))return;
+    if(man.extras&&man.extras.indexOf('computer')>=0)addComputerSet(group,fit);
+  }catch(e){}
+}
+function upgradeWithGLB(group,itemKey){
+  try{
+    if(typeof THREE.GLTFLoader==='undefined')return;
+    const man=GLB_MANIFEST[itemKey];if(!man)return;
+    const def=MAKERS[itemKey];if(!def||!def.aabb)return;
+    const fit=man.fit||def.aabb;
+    if(GLB_CACHE[man.file]===null)return; // pernah gagal → fallback primitif
+    if(GLB_CACHE[man.file]){finishGLBUpgrade(group,itemKey,man,def,fit,GLB_CACHE[man.file]);return;}
+    if(GLB_CACHE[man.file+'_loading'])return;
+    GLB_CACHE[man.file+'_loading']=true;
+    new THREE.GLTFLoader().load(man.file,function(gltf){
+      GLB_CACHE[man.file]=gltf.scene;GLB_CACHE[man.file+'_loading']=false;
+      finishGLBUpgrade(group,itemKey,man,def,fit,gltf.scene);
+    },undefined,function(){GLB_CACHE[man.file]=null;GLB_CACHE[man.file+'_loading']=false;});
+  }catch(e){}
+}
+Object.keys(GLB_MANIFEST).forEach(function(k){
+  const def=MAKERS[k];if(!def||def._glbWrapped)return;def._glbWrapped=true;
+  const origMake=def.make;
+  def.make=function(){const g=origMake();upgradeWithGLB(g,k);return g;};
+});
+
+// ---------- DEKORASI STATIS (di luar PHYS: selamat dari clearAll & tidak ikut sync) ----------
+const STATIC_BLOCKERS=[];
+function addStaticPlant(x,z){
+  try{
+    const g=new THREE.Group();g.position.set(x,0,z);
+    const pot=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.12,0.25,16),
+      new THREE.MeshStandardMaterial({color:0x8B5A2B,roughness:0.8}));
+    pot.position.y=0.125;pot.castShadow=true;g.add(pot);
+    scene.add(g);
+    STATIC_BLOCKERS.push({x:x,z:z,hw:0.25,hd:0.25});
+    if(typeof THREE.GLTFLoader!=='undefined'){
+      new THREE.GLTFLoader().load('assets/models/pottedPlant.glb',function(gltf){
+        try{
+          const m=gltf.scene;
+          const box=new THREE.Box3().setFromObject(m);
+          const size=new THREE.Vector3();box.getSize(size);
+          if(size.y>1e-4){
+            m.scale.setScalar(0.85/size.y);
+            const b2=new THREE.Box3().setFromObject(m);
+            const c=new THREE.Vector3();b2.getCenter(c);
+            m.position.x-=c.x;m.position.z-=c.z;m.position.y-=b2.min.y;
+          }
+          m.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+          while(g.children.length)g.remove(g.children[0]);
+          g.add(m);
+        }catch(e){}
+      },undefined,function(){});
+    }
+  }catch(e){}
+}
+function addStaticBanner(x,y,z,ry){
+  try{
+    if(typeof THREE.GLTFLoader==='undefined')return;
+    new THREE.GLTFLoader().load('assets/models/space_wall-banner.glb',function(gltf){
+      try{
+        const m=gltf.scene;
+        const box=new THREE.Box3().setFromObject(m);
+        const size=new THREE.Vector3();box.getSize(size);
+        if(size.y>1e-4)m.scale.setScalar(1.1/size.y);
+        m.position.set(x,y,z);m.rotation.y=ry||0;
+        m.traverse(function(o){if(o.isMesh){o.castShadow=false;o.receiveShadow=true;}});
+        scene.add(m);
+      }catch(e){}
+    },undefined,function(){});
+  }catch(e){}
+}
+try{
+  // Sudut belakang ruang praktik (LX=-5, RX=7, BZ=-4): jauh dari pintu & area jalan.
+  addStaticPlant(-4.3,-3.3);
+  addStaticPlant(6.3,-3.3);
+  // Poster di dinding belakang (z=-4), tinggi 1.9m — tanpa collider (di atas jangkauan).
+  addStaticBanner(-2,1.9,-3.9,0);
+  addStaticBanner(4,1.9,-3.9,0);
+}catch(e){}
+
+// =============================================================
 // UI STATE
 // =============================================================
 const panelEl=document.getElementById('panel');
@@ -3574,6 +3762,35 @@ function mpMakeCode(){
   }while(s.indexOf('LAB')===0);
   return s;
 }
+// BUG#1: satu format display di mana-mana — 6-char server "7K2QDX" selalu
+// ditampilkan sebagai "LAB-7K2Q-DX", sama persis dgn panel Avatar Studio.
+function mpFormatRoom(code){
+  const c=String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(-6);
+  if(c.length!==6)return String(code||'');
+  return 'LAB-'+c.slice(0,4)+'-'+c.slice(4);
+}
+// BUG#2: kembali ke studio TANPA navigasi paksa di dalam iframe.
+// - Dalam overlay studio: minta parent menutup game via postMessage.
+// - Standalone (tab langsung /game.html): klik anchor programmatik (hanya saat user klik).
+function gameGoStudio(){
+  try{
+    if(window.parent&&window.parent!==window){
+      window.parent.postMessage({src:'labipa-game',type:'labipa-exit'},'*');
+      return;
+    }
+  }catch(e){}
+  try{
+    const a=document.createElement('a');a.href='index.html';document.body.appendChild(a);a.click();a.remove();
+  }catch(e){}
+}
+// Jembatan ke parent (Avatar Studio overlay): lapor kode otoritatif server.
+function mpNotifyParent(payload){
+  try{
+    if(window.parent&&window.parent!==window){
+      window.parent.postMessage(Object.assign({src:'labipa-game'},payload||{}),'*');
+    }
+  }catch(e){}
+}
 
 // ---------- BOOT: connect socket ----------
 (function mpBoot(){
@@ -3592,7 +3809,7 @@ function mpMakeCode(){
   MP.socket.on('connect',()=>{
     MP.uid=MP.socket.id;
     MP.ready=true;
-    voiceInitSocketListeners();   // ← tambahkan baris ini
+    voiceInitSocketListeners();   // idempotent (dijaga flag di dalam)
     if(availEl){
       availEl.textContent='Server multiplayer siap · kamu = '+MP.uid.slice(0,6);
       availEl.classList.remove('err');
@@ -3602,11 +3819,25 @@ function mpMakeCode(){
     document.getElementById('btnMpJoin').disabled=false;
   });
 
-  MP.socket.on('disconnect',()=>{
-    MP.ready=false;
-    MP.enabled=false;
+  // Reconnect otomatis: gabung ulang room terakhir (create/join) + voice:start ulang.
+  // Tanpa ini user harus reload halaman tiap koneksi putus sesaat.
+  MP.socket.on('reconnect',(n)=>{
     if(availEl){
-      availEl.textContent='Terputus dari server. Muat ulang halaman.';
+      availEl.textContent='Tersambung ulang (#'+n+') · kamu = '+(MP.uid||'').slice(0,6);
+      availEl.classList.remove('err');availEl.classList.add('ok');
+    }
+    mpAutoRejoin();
+  });
+  MP.socket.on('reconnect_attempt',()=>{
+    if(availEl){availEl.textContent='Menyambung ulang ke server…';availEl.classList.add('wait');}
+  });
+
+  MP.socket.on('disconnect',(reason)=>{
+    MP.ready=false;
+    // JANGAN matikan MP.enabled/MP.code: Socket.IO reconnect otomatis,
+    // lalu mpAutoRejoin() mengembalikan sesi tanpa reload halaman.
+    if(availEl){
+      availEl.textContent='Koneksi putus ('+(reason||'')+') — menyambung ulang otomatis…';
       availEl.classList.remove('ok');
       availEl.classList.add('err');
     }
@@ -3628,6 +3859,9 @@ function mpMakeCode(){
     MP.isHost=!!(state.you&&state.you.isHost);
     MP.color=(state.you&&state.you.color)||MP_COLORS[0];
     if(state.you&&state.you.username)MP.username=state.you.username;
+    // Ingat intent terakhir utk auto-rejoin saat reconnect (BUG konektivitas).
+    MP.lastIntent={mode:MP.lastMode||(MP.isHost?'create':'join'),
+      code:MP.code,name:MP.username,max:MP.maxPlayers};
 
     MP.peers.clear();
     for(const p of state.peers){
@@ -3648,11 +3882,15 @@ function mpMakeCode(){
     // apply world dari server
     mpApplyRemoteWorldState(state.items||[]);
 
-    document.getElementById('mpRoomCode').textContent=MP.code;
+    document.getElementById('mpRoomCode').textContent=mpFormatRoom(MP.code);
     document.getElementById('mpPanel').classList.add('on');
     appStarted=true;updateCover();setCamMode('orbit');
     mpRenderPlayerList();
-    showToast('Masuk room '+MP.code+(MP.isHost?' (host)':''));
+    showToast('Masuk room '+mpFormatRoom(MP.code)+(MP.isHost?' (host)':''));
+    // BUG#1: laporkan kode OTORITATIF server ke parent (studio) agar
+    // kode lobby === kode in-room === session, selalu sinkron.
+    mpNotifyParent({type:'labipa-room-code',code:MP.code,
+      formatted:mpFormatRoom(MP.code),mode:(MP.lastIntent&&MP.lastIntent.mode)||null});
   });
 
   MP.socket.on('peer:join',(m)=>{
@@ -3714,12 +3952,38 @@ document.querySelectorAll('.mp-tab').forEach(function(tab){
   });
 });
 
+// Gabung ulang otomatis pasca-reconnect memakai intent terakhir.
+// Dipanggil dari handler 'reconnect'. Voice dimulai ulang bila tadinya aktif.
+function mpAutoRejoin(){
+  try{
+    const it=MP.lastIntent;
+    if(!it||!it.code||!MP.socket||!MP.socket.connected)return;
+    MP.lastMode=it.mode;
+    if(it.mode==='create'){
+      MP.socket.emit('room:create',
+        {code:it.code,name:it.name||'Pemain',maxPlayers:it.max||6,
+         items:PHYS.serialize(),avatar:mpLoadAvatar()},
+        function(res){
+          if(res&&res.ok){if(VOICE.capturing){try{MP.socket.emit('voice:start');}catch(e){}}}
+          else{showToast('Rejoin gagal: '+((res&&res.error)||'coba manual'));}
+        });
+    }else{
+      MP.socket.emit('room:join',{code:it.code,name:it.name||'Pemain',avatar:mpLoadAvatar()},
+        function(res){
+          if(res&&res.ok){if(VOICE.capturing){try{MP.socket.emit('voice:start');}catch(e){}}}
+          else{showToast('Rejoin gagal: '+((res&&res.error)||'coba manual'));}
+        });
+    }
+  }catch(e){}
+}
+
 // ---------- CREATE ROOM ----------
 document.getElementById('btnMpCreate').addEventListener('click',function(){
   if(!MP.ready){mpSetStatus('mpCreateStatus','Belum terhubung ke server.');return;}
   const name=(document.getElementById('mpCreateName').value||'').trim().slice(0,16)||'Pemain';
   const max=parseInt(document.getElementById('mpCreateMax').value,10)||6;
   MP.username=name;
+  MP.lastMode='create';
   const btn=this;btn.disabled=true;
   mpSetStatus('mpCreateStatus','Membuat room…','wait');
   let createTries=0;
@@ -3730,6 +3994,7 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
         // Tabrakan kode (sangat jarang) → coba lagi otomatis dengan kode baru
         if(res&&!res.ok&&res.error&&res.error.indexOf('dipakai')!==-1&&createTries<3){
           createTries++;
+          MP.pendingHandoffCode=null; // kode studio tabrakan → pakai kode baru, parent dinotifikasi via room:state
           mpSetStatus('mpCreateStatus','Kode dipakai, mencoba kode baru…','wait');
           doCreate(mpMakeCode());
           return;
@@ -3739,10 +4004,14 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
           mpSetStatus('mpCreateStatus','Gagal: '+((res&&res.error)||'coba lagi'));
           return;
         }
-        mpSetStatus('mpCreateStatus','Room dibuat: '+res.code,'ok');
+        mpSetStatus('mpCreateStatus','Room dibuat: '+mpFormatRoom(res.code),'ok');
       });
   };
-  doCreate(mpMakeCode());
+  // BUG#1: pakai kode dari Avatar Studio (single source of truth) bila ada;
+  // JANGAN generate ulang agar kode lobby === kode in-room.
+  const handoffCode=(MP.pendingHandoffCode||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
+  MP.pendingHandoffCode=null;
+  doCreate(handoffCode&&handoffCode.length===6?handoffCode:mpMakeCode());
 });
 
 // ---------- JOIN ROOM ----------
@@ -3752,6 +4021,7 @@ document.getElementById('btnMpJoin').addEventListener('click',function(){
   const code=(document.getElementById('mpJoinCode').value||'').trim().toUpperCase();
   if(!code){mpSetStatus('mpJoinStatus','Masukkan kode room dari host.');return;}
   MP.username=name;
+  MP.lastMode='join';
   const btn=this;btn.disabled=true;
   mpSetStatus('mpJoinStatus','Mencari room…','wait');
   MP.socket.emit('room:join',{code:code,name:name,avatar:mpLoadAvatar()},(res)=>{
@@ -3760,23 +4030,35 @@ document.getElementById('btnMpJoin').addEventListener('click',function(){
       mpSetStatus('mpJoinStatus','Gagal: '+((res&&res.error)||'coba lagi'));
       return;
     }
-    mpSetStatus('mpJoinStatus','Bergabung ke '+res.code,'ok');
+    mpSetStatus('mpJoinStatus','Bergabung ke '+mpFormatRoom(res.code),'ok');
   });
 });
 
-// ---------- LEAVE ----------
+// ---------- LEAVE (BUG#2: TANPA muat-ulang halaman — kembali ke cover + kabari parent) ----------
 function mpLeaveRoom(){
   if(!MP.code)return;
-  if(!confirm('Keluar dari room "'+MP.code+'"?'))return;
-  try{MP.socket.disconnect();}catch(e){}
-  location.reload();
+  if(!confirm('Keluar dari room "'+mpFormatRoom(MP.code)+'"?'))return;
+  try{if(VOICE.capturing)voiceStop();}catch(e){}
+  try{if(MP.socket)MP.socket.disconnect();}catch(e){}
+  const leftCode=MP.code;
+  MP.code=null;MP.enabled=false;MP.ready=false;MP.lastIntent=null;
+  MP.peers.clear();
+  try{MP.avatars.forEach(function(av){scene.remove(av.group);});}catch(e){}
+  MP.avatars.clear();
+  try{document.getElementById('mpRoomCode').textContent='——————';}catch(e){}
+  try{document.getElementById('mpPanel').classList.remove('on');}catch(e){}
+  // Kabari parent (overlay studio) agar menutup iframe & kembali ke studio.
+  mpNotifyParent({type:'labipa-exit',code:leftCode});
+  try{appStarted=false;updateCover();setCamMode('orbit');}catch(e){}
+  showToast('Keluar room '+mpFormatRoom(leftCode));
 }
 document.getElementById('mpLeaveBtn').addEventListener('click',mpLeaveRoom);
 document.getElementById('mpCopyCode').addEventListener('click',function(){
   if(!MP.code)return;
-  const done=()=>showToast('Kode room disalin: '+MP.code);
+  const disp=mpFormatRoom(MP.code);
+  const done=()=>showToast('Kode room disalin: '+disp);
   if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(MP.code).then(done).catch(done);
+    navigator.clipboard.writeText(disp).then(done).catch(done);
   }else done();
 });
 
@@ -4031,7 +4313,7 @@ function mpRenderPlayerList(){
   });
   el.innerHTML=html;
   const codeEl=document.getElementById('mpRoomCode');
-  if(codeEl)codeEl.textContent=MP.code+' · '+(MP.peers.size+1)+'/'+MP.maxPlayers;
+  if(codeEl)codeEl.textContent=mpFormatRoom(MP.code)+' · '+(MP.peers.size+1)+'/'+MP.maxPlayers;
 }
 
 // ---------- PER-FRAME TICK — low-latency (20Hz presence) ----------
@@ -4056,12 +4338,24 @@ function mpTick(dt){
     }
   }else if(MP.localAvatar){MP.localAvatar.group.visible=false;}
   if(!MP.socket||!MP.code)return;
+  // Hemat bandwidth (kurangi delay antrean): kirim hanya bila bergerak
+  // (>2mm/frame) ATAU heartbeat 500ms agar peer tidak dianggap hilang.
   MP.presenceAccum+=dt;
-  if(MP.presenceAccum>1/20){
+  MP._hbAccum=(MP._hbAccum||0)+dt;
+  let moved=1;
+  if(MP._lx!=null){
+    moved=Math.abs(player.pos.x-MP._lx)+Math.abs(player.pos.y-MP._ly)
+      +Math.abs(player.pos.z-MP._lz)+Math.abs(yaw-MP._lr);
+  }
+  if(MP.presenceAccum>1/20&&(moved>0.002||MP._hbAccum>0.5)){
     MP.presenceAccum=0;
-    MP.socket.emit('presence:update',{
-      x:player.pos.x,y:player.pos.y,z:player.pos.z,rotY:yaw
-    });
+    if(moved>0.002){MP._lx=player.pos.x;MP._ly=player.pos.y;MP._lz=player.pos.z;MP._lr=yaw;}
+    if(MP._hbAccum>0.5)MP._hbAccum=0;
+    if(MP.socket.connected){
+      MP.socket.emit('presence:update',{
+        x:player.pos.x,y:player.pos.y,z:player.pos.z,rotY:yaw
+      });
+    }
   }
   mpLerpAvatars(dt);
   mpMaybePushWorld();
@@ -4297,8 +4591,11 @@ function voiceCleanupSpeaking(){
 }
 
 // ---------- Socket listeners (dipanggil setelah mpBoot) ----------
+// Idempotent: connect bisa terjadi berulang (reconnect) — tanpa guard,
+// setiap reconnect mendaftarkan listener ganda → suara ganda/robot.
 function voiceInitSocketListeners(){
-  if(!MP.socket) return;
+  if(!MP.socket||MP.socket._voiceWired)return;
+  MP.socket._voiceWired=true;
 
   MP.socket.on('voice:data', function(msg){
     if(!VOICE.enabled) return;
@@ -4319,6 +4616,16 @@ function voiceInitSocketListeners(){
     VOICE.playbackQueue.delete(msg.peer);
     updateVoiceUI();
   });
+
+  // Browser bisa mensuspend AudioContext saat tab hidden — resume saat kembali.
+  if(!MP.socket._visibilityWired){
+    MP.socket._visibilityWired=true;
+    document.addEventListener('visibilitychange',function(){
+      if(document.visibilityState!=='visible')return;
+      try{if(VOICE.audioCtx&&VOICE.audioCtx.state==='suspended')VOICE.audioCtx.resume();}catch(e){}
+      try{if(VOICE.playbackCtx&&VOICE.playbackCtx.state==='suspended')VOICE.playbackCtx.resume();}catch(e){}
+    });
+  }
 }
 
 // ---------- UI ----------
@@ -4712,6 +5019,13 @@ function collidePlayerWithWallsAndDoors(x,z,r){
       if(x+r>bx-hw&&x-r<bx+hw&&z+r>bz-hd&&z-r<bz+hd)return true;
     }
   }
+  // 4) dekorasi statis (tanaman sudut — di luar PHYS agar selamat dari clearAll/sync)
+  if(typeof STATIC_BLOCKERS!=='undefined'&&STATIC_BLOCKERS.length){
+    for(let i=0;i<STATIC_BLOCKERS.length;i++){
+      const s=STATIC_BLOCKERS[i];if(!s)continue;
+      if(x+r>s.x-s.hw&&x-r<s.x+s.hw&&z+r>s.z-s.hd&&z-r<s.z+s.hd)return true;
+    }
+  }
   return false;
 }
 
@@ -5023,19 +5337,35 @@ document.getElementById('btnStart').addEventListener('click',function(e){
     if(savedAvatar.skinName)bits.push(String(savedAvatar.skinName).slice(0,24));
     if(savedAvatar.hairstyle)bits.push(String(savedAvatar.hairstyle).replace(/_/g,' ').slice(0,24));
     if(savedAvatar.suitType)bits.push(String(savedAvatar.suitType).replace(/_/g,' ').slice(0,24));
-    chip.innerHTML='Avatar 3D: <b>'+bits.join(' · ')+'</b> — <a href="index.html" style="color:inherit;font-weight:700">ubah →</a>';
+    // BUG#2: TANPA link navigasi di dalam iframe (klik = postMessage ke parent).
+    // Tombol ini meminta parent (overlay studio) kembali ke studio via postMessage.
+    chip.innerHTML='Avatar 3D: <b>'+bits.join(' · ')+'</b> — <button id="avatarEditBtn" style="color:inherit;font-weight:700;text-decoration:underline;background:none;border:none;cursor:pointer;font:inherit">ubah →</button>';
+    var eb=document.getElementById('avatarEditBtn');
+    if(eb)eb.addEventListener('click',function(){try{gameGoStudio();}catch(e){}});
   }
+  // Tombol statis "Avatar 3D" (cover + chip fallback): sama — tanpa redirect paksa.
+  ['avatarStudioBtn','btnAvatarStudio'].forEach(function(id){
+    var b=document.getElementById(id);
+    if(b)b.addEventListener('click',function(){try{gameGoStudio();}catch(e){}});
+  });
 
   var mode=(qp('mode')||'').toLowerCase();
   if(mode==='solo'||mode==='create'||mode==='join'){
     if(mode==='create'){
       var mx=parseInt(qp('max'),10);
       if(mx>=2&&mx<=8){var sel=document.getElementById('mpCreateMax');if(sel)sel.value=String(mx);}
+      // BUG#1: ambil kode SEKALI dari studio (single source of truth).
+      // btnMpCreate WAJIB memakai ini, bukan generate ulang (lihat handler create).
+      var hc=(qp('code')||qp('roomCode')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(-6);
+      if(hc&&hc.length===6){try{MP.pendingHandoffCode=hc;}catch(e){}}
+      try{MP.lastMode='create';}catch(e){}
     }
     if(mode==='join'){
       var code=(qp('code')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
       var jc=document.getElementById('mpJoinCode');if(jc&&code)jc.value=code;
+      try{MP.lastMode='join';}catch(e){}
     }
+    if(mode==='solo'){try{MP.lastMode='solo';}catch(e){}}
     try{history.replaceState(null,'',location.pathname);}catch(e){}
     // Tampilkan tab yang sesuai (create/join) agar status koneksi terlihat
     if(mode==='create'||mode==='join'){
