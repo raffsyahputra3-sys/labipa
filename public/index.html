@@ -2281,7 +2281,6 @@ function redeemCode() {
   const status = document.getElementById('redeem-status');
   // BUG#1: normalisasi total (spasi dalam, huruf kecil) + trace debug.
   const code = (input.value || '').trim().toUpperCase().replace(/\s+/g, '');
-  console.log('[REDEEM] input:', JSON.stringify(code), 'len:', code.length);
 
   if (!code) return;
 
@@ -2293,7 +2292,6 @@ function redeemCode() {
   setTimeout(() => {
     try {
       const def = REDEEM_CODES[code];
-      console.log('[REDEEM] match:', def ? def.label : null);
       if (def) {
         if (!redeemRewards.includes(code)) {
           redeemRewards.push(code);

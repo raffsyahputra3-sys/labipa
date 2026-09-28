@@ -869,6 +869,14 @@ canvas{display:block}
   cursor:pointer;font-size:12px;padding:2px 4px}
 #mpPanel .mp-head button:hover{color:var(--safety)}
 #mpPlayers{max-height:180px;overflow-y:auto;padding:8px}
+.mp-sect{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--rule);padding:8px 8px 0}
+.mp-nameRow{display:flex;gap:6px;padding:6px 8px 0}
+.mp-nameRow button{flex:1;border:1px solid var(--rule-soft);background:transparent;color:var(--ink);font-family:var(--mono);font-size:10px;padding:4px 0;cursor:pointer;border-radius:3px}
+.mp-nameRow button:hover{border-color:var(--safety);color:var(--safety)}
+#liveBadge{display:none;font-family:var(--mono);font-size:10px;font-weight:700;color:#fff;background:#B91C1C;border-radius:3px;padding:2px 6px;margin-left:6px;letter-spacing:.08em}
+#liveBadge.on{display:inline-block;animation:micPulse .8s ease-in-out infinite alternate}
+#voiceQ{display:inline-block;width:8px;height:8px;border-radius:50%;background:#8A939B;margin-left:4px;vertical-align:baseline}
+#voiceQ.g{background:#2E7D32}#voiceQ.y{background:#D97706}#voiceQ.r{background:#B91C1C}
 .mp-player .crown[title="mic aktif"]{
   color:#2E7C4A;
   font-size:12px;
@@ -1373,7 +1381,10 @@ div[data-mppanel="solo"] .cover-cta{
   <div class="sep"></div>
 
   <button class="tb-btn" id="btnVoice" title="Voice chat (mic)">
-    <span class="ico">🎤</span><span class="lbl-txt">Voice</span>
+    <span class="ico">🎤</span><span class="lbl-txt">Voice</span><span id="voiceQ" title="Kualitas suara"></span>
+  </button>
+  <button class="tb-btn" id="btnLiveBadge" title="Mode Live Edit (guru mengajar)" style="display:none">
+    <span class="ico">🔴</span><span class="lbl-txt">LIVE</span><span id="liveBadge"></span>
   </button>
 
   <div class="sep"></div>
@@ -1415,7 +1426,9 @@ div[data-mppanel="solo"] .cover-cta{
         <span class="code" id="mpRoomCode">——————</span>
         <button id="mpCopyCode" title="Salin kode room" type="button">⧉ salin</button>
       </div>
+      <div class="mp-sect">PEMAIN AKTIF</div>
       <div id="mpPlayers"></div>
+      <div class="mp-nameRow"><button id="mpRenameBtn" type="button" title="Ubah nama tampilan">✎ nama</button><button id="mpLockBtn" type="button" title="Kunci room (host)">🔒 kunci</button></div>
       <button id="mpLeaveBtn" type="button">⏻ Keluar Room</button>
     </div>
 
@@ -1657,6 +1670,7 @@ div[data-mppanel="solo"] .cover-cta{
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
 <script src="/socket.io/socket.io.js"></script>
+<script src="/js/labipa-backend.js"></script>
 <script>
 (function(){
 'use strict';
@@ -3358,7 +3372,6 @@ function toggleColliderDebug(){
       }
       showToast('Debug collider ON ('+_colliderHelpers.length+' box)');
     }else showToast('Debug collider OFF');
-    console.log('[COLLIDER] debug:',window.DEBUG_COLLIDER?'ON':'OFF',_colliderHelpers.length+'boxes');
   }catch(e){}
 }
 document.addEventListener('keydown',function(e){
@@ -3728,6 +3741,8 @@ function setGhostColor(hex){
   }
 }
 function startPlacement(itemKey){
+  // PRD v2 FR-08: siswa penonton Live Edit = read-only
+  try{if(window.LabIPA&&window.LabIPA.isViewer&&window.LabIPA.isViewer()){showToast('Mode menonton — Live Edit guru sedang berjalan');return;}}catch(e){}
   if(PLACEMENT.active)cancelPlacement();
   const def=MAKERS[itemKey];if(!def)return;
   PLACEMENT.active=true;PLACEMENT.item=itemKey;PLACEMENT.rotY=0;PLACEMENT.dist=2.4;
@@ -3906,7 +3921,7 @@ playerMesh.visible=false;scene.add(playerMesh);
 // =============================================================
 // MULTIPLAYER — Socket.IO real-time
 // =============================================================
-const MP_COLORS=['#3D7EA6','#D97706','#2E5C3E','#8B1E1E','#6B4FA0','#C2410C','#0E7490','#A16207'];
+const MP_COLORS=['#3D7EA6','#D97706','#2E5C3E','#8B1E1E','#5D4A34','#4B3A2A','#2A4A78','#B8892B','#7A3E68','#3F6B34','#8A939B','#424242'];
 const MP={
   socket:null,ready:false,enabled:false,
   code:null,username:'',color:MP_COLORS[0],isHost:false,
@@ -3935,7 +3950,9 @@ function mpMakeCode(){
 // BUG#1: satu format display di mana-mana — 6-char server "7K2QDX" selalu
 // ditampilkan sebagai "LAB-7K2Q-DX", sama persis dgn panel Avatar Studio.
 function mpFormatRoom(code){
-  const c=String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(-6);
+  const c=String(code||'').toUpperCase().replace(/[^A-Z0-9-]/g,'');
+  // PRD v2 FR-07: room kelas tampil apa adanya (mis. "8A-IPA-2026")
+  if(c.length>6||c.indexOf('-')!==-1)return c||String(code||'');
   if(c.length!==6)return String(code||'');
   return 'LAB-'+c.slice(0,4)+'-'+c.slice(4);
 }
@@ -4076,6 +4093,9 @@ function mpPostStateToParent(){
     appStarted=true;updateCover();setCamMode('orbit');
     mpRenderPlayerList();
     showToast('Masuk room '+mpFormatRoom(MP.code)+(MP.isHost?' (host)':''));
+    try{if(VOICE_RTC.active())VOICE_RTC.onRoom(state.peers||[]);}catch(e){}
+    // PRD v2 FR-08: host di room kelas = Live Edit menyala (badge merah)
+    try{if(state.isClass&&MP.isHost)mpSetLiveBadge(true);else mpSetLiveBadge(false);}catch(e){}
     // BUG#1: laporkan kode OTORITATIF server ke parent (studio) agar
     // kode lobby === kode in-room === session, selalu sinkron.
     mpNotifyParent({type:'labipa-room-code',code:MP.code,
@@ -4089,6 +4109,7 @@ function mpPostStateToParent(){
     }
     showToast((m.presence.username||'Pemain')+' bergabung');
     mpRenderPlayerList();
+    try{VOICE_RTC.onPeer(m.peer);}catch(e){}
   });
 
   MP.socket.on('peer:leave',(m)=>{
@@ -4096,8 +4117,41 @@ function mpPostStateToParent(){
     MP.peers.delete(m.peer);
     const av=MP.avatars.get(m.peer);
     if(av){scene.remove(av.group);MP.avatars.delete(m.peer);}
+    try{VOICE_RTC.drop(m.peer);}catch(e){}
     if(pres)showToast((pres.username||'Pemain')+' keluar');
     mpRenderPlayerList();
+  });
+  // PRD v1.0 §6.2 — alias player:join/leave/move (kompatibel skema PRD)
+  MP.socket.on('player:join',(m)=>{
+    if(!m||!m.id||MP.peers.has(m.id))return;
+    MP.peers.set(m.id,{uid:m.id,username:(m.name||'Pemain'),color:m.color||'#3D7EA6',voice:false,
+      x:(m.position&&m.position.x)||1,y:1.6,z:(m.position&&m.position.z)||6,rotY:0});
+    if(!MP.avatars.has(m.id))MP.avatars.set(m.id,mpCreateAvatar(m.color||'#3D7EA6',m.name||'Pemain',null));
+    showToast((m.name||'Pemain')+' bergabung');
+    mpRenderPlayerList();
+  });
+  MP.socket.on('player:leave',(m)=>{
+    if(!m||!m.id)return;
+    const pres=MP.peers.get(m.id);
+    MP.peers.delete(m.id);
+    const av=MP.avatars.get(m.id);
+    if(av){scene.remove(av.group);MP.avatars.delete(m.id);}
+    if(pres){showToast((pres.username||'Pemain')+' keluar');mpRenderPlayerList();}
+  });
+  MP.socket.on('player:move',(m)=>{
+    if(!m||!m.id)return;
+    const p=MP.peers.get(m.id);
+    const pos=m.position||{};
+    if(p){if(typeof pos.x==='number')p.x=pos.x;if(typeof pos.z==='number')p.z=pos.z;if(m.rotation&&typeof m.rotation.yaw==='number')p.rotY=m.rotation.yaw;}
+    const av=MP.avatars.get(m.id);
+    if(av&&typeof pos.x==='number'){
+      av.targetPos.set(pos.x,(typeof pos.y==='number'?pos.y:1.6)-1.6,pos.z);
+      av.targetRotY=(m.rotation&&m.rotation.yaw)||0;
+      if(!av.inited){av.group.position.copy(av.targetPos);av.group.rotation.y=av.targetRotY;av.inited=true;}
+    }
+  });
+  MP.socket.on('room:locked',(m)=>{
+    showToast(m&&m.locked?'Room dikunci host':'Room dibuka host');
   });
 
   MP.socket.on('peer:presence',(m)=>{
@@ -4122,8 +4176,23 @@ function mpPostStateToParent(){
 
   MP.socket.on('world:update',(m)=>{
     if(m.itemsUpdatedBy===MP.uid)return;
+    // PRD v2 FR-08 Live Edit: siswa penonton (read-only) tetap menerima render
+    try{
+      if(window.LabIPA&&window.LabIPA.isViewer&&window.LabIPA.isViewer()){
+        window.LABIPA_LIVE=true;
+        mpApplyRemoteWorldState(m.items||[]);
+        mpSetLiveBadge(true);
+        return;
+      }
+    }catch(e){}
     mpApplyRemoteWorldState(m.items||[]);
   });
+// PRD v2 FR-08: badge merah Live Edit di toolbar
+function mpSetLiveBadge(on){
+  const b=document.getElementById('btnLiveBadge');
+  if(b)b.style.display=on?'':'none';
+  try{window.LABIPA_LIVE=!!on;}catch(e){}
+}
 
   MP.socket.on('room:host',(m)=>{
     if(m.peer===MP.uid){MP.isHost=true;showToast('Kamu sekarang host');}
@@ -4172,6 +4241,7 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
   const name=(document.getElementById('mpCreateName').value||'').trim().slice(0,16)||'Pemain';
   const max=parseInt(document.getElementById('mpCreateMax').value,10)||6;
   MP.username=name;
+  mpSavePlayerName(name);
   MP.lastMode='create';
   const btn=this;btn.disabled=true;
   mpSetStatus('mpCreateStatus','Membuat room…','wait');
@@ -4210,11 +4280,13 @@ document.getElementById('btnMpJoin').addEventListener('click',function(){
   const rawJoin=(document.getElementById('mpJoinCode').value||'').trim().toUpperCase();
   if(!rawJoin){mpSetStatus('mpJoinStatus','Masukkan kode room dari host.');return;}
   // BUG#1: terima tempelan format display "LAB-XXXX-XX" — normalisasi seperti studio.
-  let code=rawJoin.replace(/[^A-Z0-9]/g,'');
-  if(code.indexOf('LAB')===0)code=code.slice(3);
-  code=code.slice(0,6);
-  if(code.length!==6){mpSetStatus('mpJoinStatus','Kode harus 6 karakter (mis. 7K2QDX) atau format LAB-XXXX-XX.');return;}
+  // PRD v2 FR-07: terima juga kode kelas (mis. "8A-IPA-2026").
+  let code=rawJoin.replace(/[^A-Z0-9-]/g,'');
+  if(code.indexOf('LAB')===0&&/^[A-Z0-9]{6}$/.test(code.slice(3).replace(/-/g,'')))code=code.slice(3);
+  code=code.replace(/-/g,'').length<=6?code.replace(/-/g,'').slice(0,6):code.slice(0,24);
+  if(code.length!==6&&!/^[A-Z0-9][A-Z0-9-]{1,22}[A-Z0-9]$/.test(code)){mpSetStatus('mpJoinStatus','Kode harus 6 karakter (mis. 7K2QDX), format LAB-XXXX-XX, atau kode kelas.');return;}
   MP.username=name;
+  mpSavePlayerName(name);
   MP.lastMode='join';
   const btn=this;btn.disabled=true;
   mpSetStatus('mpJoinStatus','Mencari room…','wait');
@@ -4233,6 +4305,7 @@ function mpLeaveRoom(){
   if(!MP.code)return;
   if(!confirm('Keluar dari room "'+mpFormatRoom(MP.code)+'"?'))return;
   try{if(VOICE.capturing)voiceStop();}catch(e){}
+  try{if(typeof VOICE_RTC!=='undefined'&&VOICE_RTC.active())VOICE_RTC.stop();}catch(e){}
   try{if(MP.socket)MP.socket.disconnect();}catch(e){}
   const leftCode=MP.code;
   MP.code=null;MP.enabled=false;MP.ready=false;MP.lastIntent=null;
@@ -4241,12 +4314,81 @@ function mpLeaveRoom(){
   MP.avatars.clear();
   try{document.getElementById('mpRoomCode').textContent='——————';}catch(e){}
   try{document.getElementById('mpPanel').classList.remove('on');}catch(e){}
+  try{mpSetLiveBadge(false);}catch(e){}
   // Kabari parent (overlay studio) agar menutup iframe & kembali ke studio.
   mpNotifyParent({type:'labipa-exit',code:leftCode});
   try{appStarted=false;updateCover();setCamMode('orbit');}catch(e){}
   showToast('Keluar room '+mpFormatRoom(leftCode));
 }
 document.getElementById('mpLeaveBtn').addEventListener('click',mpLeaveRoom);
+// PRD v1.0 FR-01: ubah nama dari panel Info/MP (persist + update sprite lokal)
+document.getElementById('mpRenameBtn').addEventListener('click',function(){
+  const cur=MP.username||mpLoadPlayerName()||'';
+  let n=null;
+  try{n=prompt('Nama tampilan (maks 16 karakter):',cur);}catch(e){}
+  if(n==null)return;
+  n=n.trim().slice(0,16);
+  if(!n){showToast('Nama tidak boleh kosong');return;}
+  MP.username=n;mpSavePlayerName(n);
+  try{
+    if(MP.localAvatar){MP.localAvatar.group.remove(MP.localAvatar.label);MP.localAvatar.label=mpMakeNameSprite(n,MP.color);MP.localAvatar.label.position.y=1.64;MP.localAvatar.group.add(MP.localAvatar.label);MP.localAvatar.lastName=n;}
+  }catch(e){}
+  mpRenderPlayerList();showToast('Nama: '+n);
+});
+// PRD v2 FR-07: host dapat mengunci room agar siswa baru tak bisa join
+document.getElementById('mpLockBtn').addEventListener('click',function(){
+  if(!MP.socket||!MP.code){showToast('Join room dulu');return;}
+  if(!MP.isHost){showToast('Hanya host yang boleh mengunci');return;}
+  const lock=this.dataset.locked!=='1';
+  MP.socket.emit('room:lock',{locked:lock},(res)=>{
+    if(res&&res.ok){this.dataset.locked=lock?'1':'0';this.textContent=lock?'🔓 buka':'🔒 kunci';showToast(lock?'Room dikunci':'Room dibuka');}
+    else showToast('Gagal: '+((res&&res.error)||'coba lagi'));
+  });
+});
+// PRD v2 client hooks: migrasi legacy, autosave 30 dtk, flush antrean, ?class=
+(function labipaBackendHooks(){
+  if(!window.LabIPA)return;
+  try{window.LabIPA.Storage.migrateIfNeeded();}catch(e){}
+  try{
+    window.addEventListener('online',function(){window.LabIPA.Storage.flushQueue().catch(function(){});});
+    window.LabIPA.Storage.flushQueue().catch(function(){});
+  }catch(e){}
+  let lastFp='';
+  try{
+    // Autosave debounced tiap 30 dtk bila ada perubahan (diam, tanpa toast)
+    setInterval(function(){
+      try{
+        if(typeof mpComputeFingerprint!=='function'||typeof PHYS==='undefined')return;
+        if(!PHYS.bodies||!PHYS.bodies.length)return;
+        const fp=mpComputeFingerprint();
+        if(fp===lastFp)return;
+        lastFp=fp;
+        window.LabIPA.Storage.save({name:'Layout Lab',items:PHYS.serialize()}).then(function(r){
+          if(r&&!r.offline){try{window.LabIPA.Storage.currentVersion=r.version;}catch(e){}}
+        }).catch(function(e){
+          if(e&&e.status===409)showToast('Konflik versi — klik Muat untuk sinkron!');
+        });
+      }catch(e){}
+    },30000);
+  }catch(e){}
+  // ?class=8A-IPA-2026 → isi kode join + nama dari session SSO/guest
+  try{
+    const q=new URL(location.href).searchParams;
+    const cls=(q.get('class')||q.get('classId')||'').toUpperCase().slice(0,24);
+    const sess=window.LabIPA.Auth.getSession();
+    if(sess&&sess.user){
+      if(sess.user.name){
+        ['mpSoloName','mpCreateName','mpJoinName'].forEach(function(id){
+          const el=document.getElementById(id);if(el&&!el.value)el.value=String(sess.user.name).slice(0,16);
+        });
+      }
+      const code=(sess.user.classId||cls||'');
+      if(code){const jc=document.getElementById('mpJoinCode');if(jc&&!jc.value)jc.value=code;}
+    }else if(cls){
+      const jc=document.getElementById('mpJoinCode');if(jc&&!jc.value)jc.value=cls;
+    }
+  }catch(e){}
+})();
 document.getElementById('mpCopyCode').addEventListener('click',function(){
   if(!MP.code)return;
   const disp=mpFormatRoom(MP.code);
@@ -4494,7 +4636,7 @@ function mpCreateAvatar(colorHex,name,av){
   const label=mpMakeNameSprite(name,colorHex);
   label.position.y=1.64;group.add(label);
   scene.add(group);
-  return {group:group,label:label,lastName:name,
+  return {group:group,label:label,lastName:name,color:colorHex,
     targetPos:new THREE.Vector3(),targetRotY:0,inited:false};
 }
 function mpLerpAvatars(dt){
@@ -4507,13 +4649,30 @@ function mpLerpAvatars(dt){
   });
 }
 
+// PRD v1.0 FR-01: sanitasi output nama (anti HTML/script injection)
+function escName(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// PRD v1.0 FR-01: kunci kanonis nama pemain (persist + dapat diubah dari panel Info)
+function mpLoadPlayerName(){
+  try{
+    const c=localStorage.getItem('labipa.playerName');
+    if(c&&c.trim())return c.trim().slice(0,16);
+    const legacy=JSON.parse(localStorage.getItem('labipa_player')||'null');
+    if(legacy&&legacy.name)return String(legacy.name).slice(0,16);
+  }catch(e){}
+  return '';
+}
+function mpSavePlayerName(n){
+  n=String(n||'').trim().slice(0,16);
+  try{localStorage.setItem('labipa.playerName',n);}catch(e){}
+  try{localStorage.setItem('labipa_player',JSON.stringify({name:n||'Pemain'}));}catch(e){}
+}
 // ---------- HUD PLAYER LIST ----------
 function mpRenderPlayerList(){
   const el=document.getElementById('mpPlayers');if(!el)return;
   let html=
     '<div class="mp-player">'+
       '<span class="dot" style="background:'+MP.color+'"></span>'+
-      '<span class="nm">'+(MP.username||'Kamu')+' (kamu)</span>'+
+      '<span class="nm">'+escName(MP.username||'Kamu')+' (kamu)</span>'+
       (MP.isHost?'<span class="crown">👑</span>':'')+
       (VOICE.speakingLocal?'<span class="crown" title="sedang bicara">🔊</span>':'')+
       (VOICE.capturing?'<span class="crown" title="mic aktif">🎙</span>':'')+
@@ -4522,7 +4681,7 @@ function mpRenderPlayerList(){
     html+=
       '<div class="mp-player">'+
         '<span class="dot" style="background:'+(pres.color||'#3D7EA6')+'"></span>'+
-        '<span class="nm">'+(pres.username||'Pemain')+'</span>'+
+        '<span class="nm">'+escName(pres.username||'Pemain')+'</span>'+
         (pres.isHost?'<span class="crown">👑</span>':'')+
         (VOICE.speakingPeers.has(pres.uid)?'<span class="crown" title="sedang bicara">🔊</span>':'')+
         (pres.voice?'<span class="crown" title="mic aktif">🎙</span>':'')+
@@ -4583,7 +4742,26 @@ function mpTick(dt){
 
 // =============================================================
 // VOICE CHAT — WebSocket audio streaming (raw PCM Int16)
+// PRD v1.0 FR-02: echoCancellation + noiseSuppression + AGC aktif,
+// jitter buffer 80ms, playback via DynamicsCompressor + Gain
+// normalisasi (anti clipping), indikator kualitas tiap 2 detik.
+// Mode WebRTC P2P (Opus, playoutDelayHint=0.05) tersedia bila
+// URL memakai ?webrtc=1 — lihat modul VOICE_RTC di bawah.
 // =============================================================
+// PRD v1.0 §6.3 — konfigurasi voice terpusat
+const VOICE_CONFIG = {
+  codec: 'opus',
+  sampleRate: 48000,
+  channels: 1,
+  dtx: false,
+  fec: true,
+  playoutDelayHint: 0.05,          // 50 ms — jitter buffer WebRTC
+  jitterBufferSocket: 0.08,        // 80 ms — transport Socket.IO
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' }
+    // Tambah TURN cadangan via: VOICE_CONFIG.iceServers.push({urls:'turn:...',username:'u',credential:'p'})
+  ]
+};
 const VOICE = {
   enabled: false,
   capturing: false,
@@ -4593,6 +4771,8 @@ const VOICE = {
   processor: null,
   silentGain: null,
   playbackCtx: null,
+  comp: null,            // DynamicsCompressorNode (anti clipping)
+  normGain: null,        // GainNode normalisasi
   playbackQueue: new Map(),    // peerId -> { time, lastActivity }
   speakingPeers: new Set(),
   speakingLocal: false,
@@ -4600,8 +4780,10 @@ const VOICE = {
   sampleRate: 48000,
   chunkSize: 2048,
   vadThreshold: 0.012,         // RMS minimum untuk dianggap suara
-  jitterBuffer: 0.08,          // 80ms buffer — low-latency voice
-  _cleanupTimer: null
+  jitterBuffer: VOICE_CONFIG.jitterBufferSocket,
+  _cleanupTimer: null,
+  _qTimer: null,
+  stat: { chunks: 0, underruns: 0, windowStart: 0 }  // monitor kualitas
 };
 
 async function voiceStart(){
@@ -4673,17 +4855,33 @@ async function voiceStart(){
     VOICE.processor.connect(VOICE.silentGain);
     VOICE.silentGain.connect(VOICE.audioCtx.destination);
 
-    // 3. Playback context
+    // 3. Playback context + pipeline normalisasi (anti clipping)
     VOICE.playbackCtx = new AC();
+    try{
+      VOICE.comp = VOICE.playbackCtx.createDynamicsCompressor();
+      VOICE.comp.threshold.value = -18;
+      VOICE.comp.knee.value = 20;
+      VOICE.comp.ratio.value = 8;
+      VOICE.comp.attack.value = 0.003;
+      VOICE.comp.release.value = 0.15;
+      VOICE.normGain = VOICE.playbackCtx.createGain();
+      VOICE.normGain.gain.value = 1.2;
+      VOICE.comp.connect(VOICE.normGain);
+      VOICE.normGain.connect(VOICE.playbackCtx.destination);
+    }catch(e){ VOICE.comp = null; VOICE.normGain = null; }
+    VOICE.stat.windowStart = performance.now();
 
     // 4. Beritahu server
     MP.socket.emit('voice:start');
     VOICE.enabled = true;
     VOICE.capturing = true;
 
-    // 5. Timer pembersih speaking indicator
+    // 5. Timer pembersih speaking indicator + monitor kualitas (tiap 2 dtk)
     if(!VOICE._cleanupTimer){
       VOICE._cleanupTimer = setInterval(voiceCleanupSpeaking, 200);
+    }
+    if(!VOICE._qTimer){
+      VOICE._qTimer = setInterval(voiceUpdateQuality, 2000);
     }
 
     showToast('🎤 Voice chat aktif');
@@ -4725,6 +4923,9 @@ function voiceStop(){
     try{ VOICE.playbackCtx.close(); }catch(e){}
     VOICE.playbackCtx = null;
   }
+  VOICE.comp = null;
+  VOICE.normGain = null;
+  VOICE.stat.chunks = 0; VOICE.stat.underruns = 0;
   VOICE.playbackQueue.clear();
   VOICE.speakingPeers.clear();
   VOICE.speakingLocal = false;
@@ -4733,6 +4934,11 @@ function voiceStop(){
     clearInterval(VOICE._cleanupTimer);
     VOICE._cleanupTimer = null;
   }
+  if(VOICE._qTimer){
+    clearInterval(VOICE._qTimer);
+    VOICE._qTimer = null;
+  }
+  try{const q=document.getElementById('voiceQ');if(q){q.className='';q.title='Kualitas suara';}}catch(e){}
 
   if(MP.socket && MP.socket.connected){
     MP.socket.emit('voice:stop');
@@ -4741,6 +4947,7 @@ function voiceStop(){
 }
 
 function voiceToggle(){
+  try{if(VOICE_RTC.active()){VOICE_RTC.toggle();return;}}catch(e){}
   if(VOICE.capturing) voiceStop();
   else voiceStart();
 }
@@ -4763,7 +4970,9 @@ function voicePlayChunk(peerId, arrayBuffer){
 
   const src = ctx.createBufferSource();
   src.buffer = buffer;
-  src.connect(ctx.destination);
+  // PRD v1.0 FR-02: lewat kompresor + gain normalisasi bila ada
+  try{ src.connect(VOICE.comp || ctx.destination); }
+  catch(e){ try{src.connect(ctx.destination);}catch(_){} }
 
   let state = VOICE.playbackQueue.get(peerId);
   if(!state){
@@ -4775,7 +4984,9 @@ function voicePlayChunk(peerId, arrayBuffer){
   // Resync kalau playback time sudah ketinggalan
   if(state.time < now + 0.02){
     state.time = now + VOICE.jitterBuffer;
+    VOICE.stat.underruns++;
   }
+  VOICE.stat.chunks++;
 
   try{
     src.start(state.time);
@@ -4845,6 +5056,247 @@ function voiceInitSocketListeners(){
     });
   }
 }
+
+// PRD v1.0 FR-02: indikator kualitas suara (hijau/kuning/merah) tiap 2 detik.
+// Hijau: aliran chunk stabil, underrun rendah. Kuning: underrun sedang.
+// Merah: tidak ada chunk padahal ada peer voice / underrun tinggi.
+function voiceUpdateQuality(){
+  if(!VOICE.capturing&&VOICE.speakingPeers.size===0){voiceSetQuality('', 'Kualitas suara');return;}
+  const chunks=VOICE.stat.chunks, under=VOICE.stat.underruns;
+  VOICE.stat.chunks=0;VOICE.stat.underruns=0;VOICE.stat.windowStart=performance.now();
+  const anyRemote=VOICE.speakingPeers.size>0;
+  if(anyRemote&&chunks===0){voiceSetQuality('r','Tidak ada audio masuk — cek koneksi peer');return;}
+  if(under>=8){voiceSetQuality('r','Banyak jeda audio ('+under+' resync/2 dtk)');return;}
+  if(under>=3){voiceSetQuality('y','Kualitas sedang ('+under+' resync/2 dtk)');return;}
+  voiceSetQuality('g', chunks>0?('Lancar ('+chunks+' chunk/2 dtk)'):('Mic aktif — menunggu suara'));
+}
+function voiceSetQuality(cls, title){
+  try{
+    const q=document.getElementById('voiceQ');
+    if(q){q.className=cls||'';q.title=title||'Kualitas suara';}
+    const btn=document.getElementById('btnVoice');
+    if(btn)btn.title='Voice chat (mic) — '+(title||'');
+  }catch(e){}
+}
+
+// =============================================================
+// VOICE RTC — mode WebRTC P2P opsional (PRD v1.0 FR-02 penuh)
+// Aktif bila URL memakai ?webrtc=1. Mesh Opus 48kHz, DTX mati,
+// FEC aktif (via SDP), playoutDelayHint=0.05 di semua receiver,
+// remote audio lewat DynamicsCompressor, ICE restart otomatis,
+// indikator kualitas dari getStats tiap 2 detik.
+// Tanpa flag ini, transport default tetap Socket.IO (hemat infra).
+// =============================================================
+const VOICE_RTC = {
+  pcs: new Map(),       // peerId -> RTCPeerConnection
+  stream: null,
+  rtcCtx: null,
+  rtcComp: null,
+  _qTimer: null,
+  _wired: false,
+  pendingIce: new Map(), // peerId -> [candidate]
+  want: (function(){try{return new URL(location.href).searchParams.get('webrtc')==='1';}catch(e){return false;}})(),
+  active: function(){ return VOICE_RTC.want && !!(window.RTCPeerConnection); }
+};
+function rtcEnsureChain(){
+  if(VOICE_RTC.rtcCtx)return true;
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    VOICE_RTC.rtcCtx=new AC({sampleRate:VOICE_CONFIG.sampleRate});
+    VOICE_RTC.rtcComp=VOICE_RTC.rtcCtx.createDynamicsCompressor();
+    VOICE_RTC.rtcComp.threshold.value=-18;VOICE_RTC.rtcComp.ratio.value=8;
+    const g=VOICE_RTC.rtcCtx.createGain();g.gain.value=1.2;
+    VOICE_RTC.rtcComp.connect(g);g.connect(VOICE_RTC.rtcCtx.destination);
+    return true;
+  }catch(e){return false;}
+}
+function rtcMakePC(peerId){
+  const pc=new RTCPeerConnection({iceServers:VOICE_CONFIG.iceServers});
+  VOICE_RTC.pcs.set(peerId,pc);
+  if(VOICE_RTC.stream){
+    VOICE_RTC.stream.getTracks().forEach(function(t){
+      try{pc.addTrack(t,VOICE_RTC.stream);}catch(e){}
+    });
+  }
+  pc.onicecandidate=function(e){
+    if(e.candidate&&MP.socket&&MP.socket.connected){
+      MP.socket.emit('voice:ice',{to:peerId,candidate:e.candidate});
+    }
+  };
+  pc.oniceconnectionstatechange=function(){
+    try{
+      if(pc.iceConnectionState==='failed'||pc.iceConnectionState==='disconnected'){
+        pc.restartIce(); // PRD: ICE restart otomatis
+      }
+    }catch(e){}
+  };
+  pc.ontrack=function(e){
+    try{
+      // playoutDelayHint 50ms di semua receiver (PRD FR-02)
+      pc.getReceivers().forEach(function(r){
+        try{if('playoutDelayHint' in r)r.playoutDelayHint=VOICE_CONFIG.playoutDelayHint;}catch(_){}
+      });
+      const stream=(e.streams&&e.streams[0])||new MediaStream([e.track]);
+      if(rtcEnsureChain()){
+        try{
+          const src=VOICE_RTC.rtcCtx.createMediaStreamSource(stream);
+          src.connect(VOICE_RTC.rtcComp);
+        }catch(_){ rtcFallbackAudio(stream); }
+      }else rtcFallbackAudio(stream);
+      VOICE.speakingPeers.add(peerId);updateVoiceUI();
+      e.track.onended=function(){VOICE.speakingPeers.delete(peerId);updateVoiceUI();};
+    }catch(err){}
+  };
+  return pc;
+}
+function rtcFallbackAudio(stream){
+  try{
+    let el=document.getElementById('rtcAudio_'+peerId);
+    if(!el){el=document.createElement('audio');el.id='rtcAudio_'+peerId;el.autoplay=true;el.style.display='none';document.body.appendChild(el);}
+    el.srcObject=stream;
+  }catch(e){}
+}
+async function rtcOffer(peerId){
+  try{
+    const pc=VOICE_RTC.pcs.get(peerId)||rtcMakePC(peerId);
+    // Force Opus, matikan DTX, aktifkan FEC via SDP munging
+    let offer=await pc.createOffer({offerToReceiveAudio:true});
+    offer.sdp=rtcTuneSdp(offer.sdp);
+    await pc.setLocalDescription(offer);
+    if(MP.socket&&MP.socket.connected)MP.socket.emit('voice:offer',{to:peerId,sdp:pc.localDescription});
+  }catch(e){}
+}
+function rtcTuneSdp(sdp){
+  try{
+    // useinbandfec=1 (FEC aktif), usedtx=0 (DTX mati), maxaveragebitrate 64000
+    sdp=sdp.replace(/a=fmtp:111 minptime=10;useinbandfec=1/g,'a=fmtp:111 minptime=10;useinbandfec=1;usedtx=0;maxaveragebitrate=64000');
+    if(sdp.indexOf('usedtx')===-1)sdp=sdp.replace(/a=fmtp:(\d+) /g,'a=fmtp:$1 usedtx=0;useinbandfec=1;maxaveragebitrate=64000; ');
+  }catch(e){}
+  return sdp;
+}
+function rtcWire(){
+  if(VOICE_RTC._wired||!MP.socket)return;
+  VOICE_RTC._wired=true;
+  MP.socket.on('voice:offer',async function(m){
+    if(!VOICE_RTC.active()||!m||m.from===MP.uid)return;
+    try{
+      let pc=VOICE_RTC.pcs.get(m.from);
+      const polite=!MP.uid||!m.from||(MP.uid>m.from);
+      if(pc&&pc.signalingState!=='stable'&&!polite)return; // glare: impolite mengalah
+      if(!pc)pc=rtcMakePC(m.from);
+      const desc=m.data||m;
+      await pc.setRemoteDescription(new RTCSessionDescription(desc.sdp?desc:{type:'offer',sdp:desc}));
+      const q=VOICE_RTC.pendingIce.get(m.from)||[];
+      VOICE_RTC.pendingIce.delete(m.from);
+      q.forEach(function(c){try{pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}});
+      let ans=await pc.createAnswer();
+      ans.sdp=rtcTuneSdp(ans.sdp);
+      await pc.setLocalDescription(ans);
+      MP.socket.emit('voice:answer',{to:m.from,sdp:pc.localDescription});
+    }catch(e){}
+  });
+  MP.socket.on('voice:answer',async function(m){
+    if(!VOICE_RTC.active()||!m)return;
+    try{
+      const pc=VOICE_RTC.pcs.get(m.from);
+      if(!pc||pc.signalingState!=='have-local-offer')return;
+      const desc=m.data||m;
+      await pc.setRemoteDescription(new RTCSessionDescription(desc.sdp?desc:{type:'answer',sdp:desc}));
+      const q=VOICE_RTC.pendingIce.get(m.from)||[];
+      VOICE_RTC.pendingIce.delete(m.from);
+      q.forEach(function(c){try{pc.addIceCandidate(new RTCIceCandidate(c));}catch(e){}});
+    }catch(e){}
+  });
+  MP.socket.on('voice:ice',function(m){
+    if(!VOICE_RTC.active()||!m)return;
+    try{
+      const cand=(m.data&&m.data.candidate)?m.data:(m.data||m);
+      const pc=VOICE_RTC.pcs.get(m.from);
+      if(pc&&pc.remoteDescription)pc.addIceCandidate(new RTCIceCandidate(cand)).catch(function(){});
+      else{
+        const q=VOICE_RTC.pendingIce.get(m.from)||[];
+        q.push(cand);VOICE_RTC.pendingIce.set(m.from,q);
+      }
+    }catch(e){}
+  });
+  // Monitor kualitas getStats tiap 2 detik → indikator hijau/kuning/merah
+  if(!VOICE_RTC._qTimer){
+    VOICE_RTC._qTimer=setInterval(function(){
+      if(!VOICE_RTC.pcs.size)return;
+      VOICE_RTC.pcs.forEach(function(pc,peerId){
+        try{
+          pc.getStats().then(function(st){
+            let rtt=null,jitter=null;
+            st.forEach(function(r){
+              if(r.type==='candidate-pair'&&r.nominated&&(r.currentRoundTripTime!=null))rtt=r.currentRoundTripTime*1000;
+              if(r.type==='inbound-rtp'&&r.kind==='audio'&&r.jitter!=null)jitter=r.jitter*1000;
+            });
+            if(rtt==null)return;
+            const score=rtt+(jitter||0);
+            if(score<=150)voiceSetQuality('g','WebRTC lancar (RTT '+Math.round(rtt)+' ms)');
+            else if(score<=300)voiceSetQuality('y','WebRTC sedang (RTT '+Math.round(rtt)+' ms)');
+            else voiceSetQuality('r','WebRTC buruk (RTT '+Math.round(rtt)+' ms)');
+          }).catch(function(){});
+        }catch(e){}
+      });
+    },2000);
+  }
+}
+VOICE_RTC.onRoom=function(peers){
+  if(!VOICE_RTC.active())return;
+  rtcWire();
+  (peers||[]).forEach(function(p){ if(MP.uid&&p.peer>MP.uid)rtcOffer(p.peer); });
+};
+VOICE_RTC.onPeer=function(peerId){
+  if(!VOICE_RTC.active())return;
+  rtcWire();
+  if(MP.uid&&peerId>MP.uid)rtcOffer(peerId);
+};
+VOICE_RTC.drop=function(peerId){
+  const pc=VOICE_RTC.pcs.get(peerId);
+  if(pc){try{pc.close();}catch(e){}VOICE_RTC.pcs.delete(peerId);}
+  try{const el=document.getElementById('rtcAudio_'+peerId);if(el)el.remove();}catch(e){}
+  VOICE.speakingPeers.delete(peerId);
+};
+VOICE_RTC.toggle=function(){
+  if(VOICE.capturing){VOICE_RTC.stop();return;}
+  VOICE_RTC.start();
+};
+VOICE_RTC.start=async function(){
+  if(!MP.code){showToast('Join room dulu untuk voice chat');return;}
+  try{
+    VOICE_RTC.stream=await navigator.mediaDevices.getUserMedia({audio:{
+      echoCancellation:true,noiseSuppression:true,autoGainControl:true,
+      sampleRate:VOICE_CONFIG.sampleRate,channelCount:1}});
+    rtcWire();
+    // Tambahkan track ke PC yang sudah ada (offer susulan) + renegosiasi
+    VOICE_RTC.pcs.forEach(function(pc,peerId){
+      try{
+        VOICE_RTC.stream.getTracks().forEach(function(t){
+          try{pc.addTrack(t,VOICE_RTC.stream);}catch(e){}
+        });
+        rtcOffer(peerId);
+      }catch(e){}
+    });
+    MP.peers.forEach(function(_,peerId){ if(!VOICE_RTC.pcs.has(peerId)&&(!MP.uid||peerId>MP.uid))rtcOffer(peerId); });
+    if(MP.socket&&MP.socket.connected)MP.socket.emit('voice:start');
+    VOICE.enabled=true;VOICE.capturing=true;
+    showToast('🎤 Voice WebRTC aktif (?webrtc=1)');
+    updateVoiceUI();
+  }catch(err){
+    try{showToast('Gagal akses mic: '+(err.message||err));}catch(e){}
+  }
+};
+VOICE_RTC.stop=function(){
+  VOICE_RTC.pcs.forEach(function(pc){try{pc.close();}catch(e){}});
+  VOICE_RTC.pcs.clear();
+  if(VOICE_RTC.stream){VOICE_RTC.stream.getTracks().forEach(function(t){try{t.stop();}catch(e){}});VOICE_RTC.stream=null;}
+  if(VOICE_RTC.rtcCtx){try{VOICE_RTC.rtcCtx.close();}catch(e){}VOICE_RTC.rtcCtx=null;VOICE_RTC.rtcComp=null;}
+  VOICE.enabled=false;VOICE.capturing=false;
+  VOICE.speakingPeers.clear();
+  if(MP.socket&&MP.socket.connected){try{MP.socket.emit('voice:stop');}catch(e){}}
+  updateVoiceUI();
+};
 
 // ---------- UI ----------
 function updateVoiceUI(){
@@ -5012,14 +5464,38 @@ document.getElementById('btnStd').addEventListener('click',openStd);
 document.getElementById('stdClose').addEventListener('click',closeStd);
 
 // =============================================================
-// SAVE / LOAD
+// SAVE / LOAD — via StorageAdapter (PRD v2 FR-06 single source
+// of truth). Cache offline milik adapter; kunci legacy lama hanya dibaca SEKALI saat migrasi.
 // =============================================================
-const LS_KEY='labipa.studio.v2';
+const LS_CACHE_KEY='labipa.cache.layout.v1';
+function labipaAdapter(){ try{return (window.LabIPA&&window.LabIPA.Storage)||null;}catch(e){return null;} }
+function labipaCacheWrite(items){
+  try{localStorage.setItem(LS_CACHE_KEY,JSON.stringify({v:2,items:items,ts:Date.now()}));}catch(e){}
+}
+function labipaCacheRead(){
+  try{
+    const raw=localStorage.getItem(LS_CACHE_KEY);
+    if(!raw)return null;
+    const d=JSON.parse(raw);
+    return (d&&d.items)?d.items:null;
+  }catch(e){return null;}
+}
 function saveLayout(){
   try{
-    const data={v:2,items:PHYS.serialize()};
-    localStorage.setItem(LS_KEY,JSON.stringify(data));
-    showToast('Disimpan ('+data.items.length+' item)');
+    const items=PHYS.serialize();
+    const adapter=labipaAdapter();
+    labipaCacheWrite(items);
+    if(adapter){
+      adapter.save({name:'Layout Lab',items:items}).then(function(r){
+        if(r&&r.offline)showToast('Disimpan offline ('+items.length+' item) — tersinkron nanti');
+        else showToast('Disimpan ke server ('+items.length+' item, v'+(r&&r.version||'?')+')');
+      }).catch(function(e){
+        if(e&&e.status===409)showToast('Konflik versi — muat ulang layout terbaru!');
+        else showToast('Gagal simpan server, cache lokal dipakai');
+      });
+      return;
+    }
+    showToast('Disimpan ('+items.length+' item)');
   }catch(e){showToast('Gagal simpan: '+e.message);}
 }
 function downloadLayoutHTML(){
@@ -5054,22 +5530,19 @@ function downloadLayoutHTML(){
   }catch(e){ showToast('Gagal download: '+e.message); }
 }
 function loadLayout(){
-  try{
-    const raw=localStorage.getItem(LS_KEY);
-    if(!raw){showToast('Belum ada tata letak tersimpan');return;}
-    const data=JSON.parse(raw);
-    if(!data||!data.items){showToast('Data tidak valid');return;}
-    if(PLACEMENT.active)cancelPlacement();
-    PHYS.clearAll();
-    for(let i=0;i<data.items.length;i++){
-      const it=data.items[i],def=MAKERS[it.itemKey];if(!def)continue;
-      const real=def.make();
-      real.position.set(it.pos.x,0,it.pos.z);   // abaikan pos.y dari save
-      real.rotation.set(0,it.rotY||0,0);scene.add(real);
-      const b=PHYS.add(real,{label:def.label,aabb:def.aabb,type:def.type,
-        itemKey:it.itemKey,rest:0.15,fric:0.85,
-        adhesive:it.stuckSurface||'floor'});
-      if(it.stuck&&it.stuckSurface==='wall'){
+    const applyItems=function(items,tag){
+      try{
+      if(PLACEMENT.active)cancelPlacement();
+      PHYS.clearAll();
+      for(let i=0;i<items.length;i++){
+        const it=items[i],def=MAKERS[it.itemKey];if(!def)continue;
+        const real=def.make();
+        real.position.set(it.pos.x,0,it.pos.z);   // abaikan pos.y dari save
+        real.rotation.set(0,it.rotY||0,0);scene.add(real);
+        const b=PHYS.add(real,{label:def.label,aabb:def.aabb,type:def.type,
+          itemKey:it.itemKey,rest:0.15,fric:0.85,
+          adhesive:it.stuckSurface||'floor'});
+        if(it.stuck&&it.stuckSurface==='wall'){
         const halfSpan=Math.max(def.aabb.w,def.aabb.d)/2;
         const ws=PHYS.findNearestWall(real.position,halfSpan);
         const maxDist=def.aabb.d/2+0.35;
@@ -5097,8 +5570,40 @@ function loadLayout(){
         b.stuck=true;b.stuckSurface='floor';
       }
     }
-    updateStats();showToast('Dimuat ('+data.items.length+' item)');
-  }catch(e){showToast('Gagal muat: '+e.message);}
+      updateStats();showToast('Dimuat ('+items.length+' item)'+(tag?' · '+tag:''));
+      labipaCacheWrite(items);
+      }catch(e){showToast('Gagal muat: '+e.message);return;}
+    };
+    // Muat dari server bila tersedia (adapter), fallback cache offline
+    try{
+      const adapter=labipaAdapter();
+      if(adapter&&adapter.currentId){
+        adapter.get(adapter.currentId).then(function(it){
+          if(it&&it.items&&it.items.length)applyItems(it.items,'server v'+(it.version||'?'));
+        }).catch(function(){});
+        return;
+      }
+      if(adapter){
+        adapter.list().then(function(list){
+          if(list&&list.length){
+            adapter.currentId=list[0].id;adapter.currentVersion=list[0].version;
+            applyItems(list[0].items||[],'server');
+          }else{
+            const cached=labipaCacheRead();
+            if(cached&&cached.length)applyItems(cached,'offline');
+            else showToast('Belum ada tata letak tersimpan');
+          }
+        }).catch(function(){
+          const cached=labipaCacheRead();
+          if(cached&&cached.length)applyItems(cached,'offline');
+          else showToast('Belum ada tata letak tersimpan');
+        });
+        return;
+      }
+    }catch(e){}
+    const cached=labipaCacheRead();
+    if(cached&&cached.length)applyItems(cached,'offline');
+    else showToast('Belum ada tata letak tersimpan');
 }
 
 // =============================================================
@@ -5334,6 +5839,18 @@ function drawMM(){
     mmCtx.beginPath();mmCtx.arc(p.mx,p.my,5,0,Math.PI*2);mmCtx.fill();
     mmCtx.strokeStyle='#F5F0E0';mmCtx.lineWidth=1.5;mmCtx.stroke();
   }
+  // PRD v1.0 FR-01: dot pemain lain di minimap (warna per pemain)
+  try{
+    if(MP&&MP.avatars){
+      MP.avatars.forEach(function(av){
+        const src=(av.inited||!av.group)?av.targetPos:av.group.position;
+        const p=w2m(src.x,src.z);
+        mmCtx.fillStyle=av.color||'#3D7EA6';
+        mmCtx.beginPath();mmCtx.arc(p.mx,p.my,4,0,Math.PI*2);mmCtx.fill();
+        mmCtx.strokeStyle='#F5F0E0';mmCtx.lineWidth=1.2;mmCtx.stroke();
+      });
+    }
+  }catch(e){}
 }
 
 // =============================================================
@@ -5503,7 +6020,7 @@ function playFallbackStamp(){
     ng.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.08);
     noise.connect(ng);ng.connect(ctx.destination);
     noise.start(ctx.currentTime);
-  }catch(e){console.log('[SFX-Fallback]',e.message);}
+  }catch(e){}
 }
 document.getElementById('btnStart').addEventListener('click',function(e){
   e.stopPropagation();
@@ -5515,12 +6032,10 @@ document.getElementById('btnStart').addEventListener('click',function(e){
       const p=sfx.play();
       if(p&&p.catch){
         p.catch(function(err){
-          console.log('[SFX] Audio tidak bisa diputar:',err.message);
           playFallbackStamp();
         });
       }
     }catch(err){
-      console.log('[SFX] Error:',err.message);
       playFallbackStamp();
     }
   }else{
@@ -5528,7 +6043,7 @@ document.getElementById('btnStart').addEventListener('click',function(e){
   }
   var soloNm=document.getElementById('mpSoloName');
   if(soloNm&&soloNm.value.trim()){MP.username=soloNm.value.trim().slice(0,16);}
-  try{localStorage.setItem('labipa_player',JSON.stringify({name:MP.username||'Pemain'}));}catch(_){}
+  mpSavePlayerName(MP.username||'Pemain');
   appStarted=true;
   updateCover();
   setCamMode('orbit');
@@ -5544,7 +6059,7 @@ document.getElementById('btnStart').addEventListener('click',function(e){
   try{savedPlayer=JSON.parse(localStorage.getItem('labipa_player')||'null');}catch(e){}
   try{savedAvatar=JSON.parse(localStorage.getItem('labipa_avatar')||'null');}catch(e){}
 
-  var handoffName=(qp('name')||((savedPlayer&&savedPlayer.name)||'')).trim().slice(0,16);
+  var handoffName=(qp('name')||mpLoadPlayerName()||((savedPlayer&&savedPlayer.name)||'')).trim().slice(0,16);
   if(handoffName){
     ['mpSoloName','mpCreateName','mpJoinName'].forEach(function(id){
       var el=document.getElementById(id);
@@ -5630,8 +6145,6 @@ function onResize(){
 }
 window.addEventListener('resize',onResize);
 onResize();
-
-console.log('[LABIPA 3D STUDIO] siap');
 }
 })();
 </script>

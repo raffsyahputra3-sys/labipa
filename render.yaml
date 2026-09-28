@@ -9,4 +9,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: ALLOW_GUEST
+        value: true
+      - key: ENABLE_LIVE_EDIT
+        value: true
     autoDeploy: true
