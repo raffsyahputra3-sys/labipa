@@ -179,17 +179,20 @@ var StorageAdapter = {
     });
   },
   // Simpan: POST bila belum punya id, PUT + optimistic lock bila sudah
-  save: function (layout) {
+  save: function (layout, opts) {
+    var force = !!(opts && opts.force);
     var payload = { name: layout.name || 'Layout Lab', items: layout.items, classId: layout.classId };
+    if (force) payload.force = true;
     if (!StorageAdapter.currentId) {
       return RemoteStore.create(payload).then(function (it) {
         StorageAdapter.currentId = it.id;
         StorageAdapter.currentVersion = it.version;
         return it;
       }).catch(function () {
-        // Offline: antre + cache lokal
+        // Offline: antre + cache lokal + WAL IndexedDB (payload besar)
         LocalCache.enqueue({ op: 'create', payload: payload });
         LocalCache.cacheLayout({ items: payload.items, ts: Date.now() });
+        try { WalDB.putLatest(payload.items); } catch (e) {}
         return { offline: true, items: payload.items };
       });
     }
@@ -201,6 +204,7 @@ var StorageAdapter = {
         if (e && e.status === 409) throw e; // conflict wajib ditangani UI (modal muat ulang)
         LocalCache.enqueue({ op: 'update', id: StorageAdapter.currentId, payload: payload });
         LocalCache.cacheLayout({ items: payload.items, ts: Date.now() });
+        try { WalDB.putLatest(payload.items); } catch (e2) {}
         return { offline: true, items: payload.items };
       });
   },
@@ -325,10 +329,91 @@ var Gate = {
   }
 };
 
+/* ---------------- WAL IndexedDB (Sprint 5: payload >5MB, tutup jendela 2 dtk) ----------------
+ * Antrean localStorage tetap untuk op kecil; snapshot layout besar ke IndexedDB. */
+var WalDB = {
+  db: null,
+  open: function () {
+    if (WalDB.db) return Promise.resolve(WalDB.db);
+    return new Promise(function (res) {
+      try {
+        if (!('indexedDB' in window)) return res(null);
+        var rq = indexedDB.open('labipa-wal', 1);
+        rq.onupgradeneeded = function () { try { rq.result.createObjectStore('ops'); } catch (e) {} };
+        rq.onsuccess = function () { WalDB.db = rq.result; res(rq.result); };
+        rq.onerror = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+  },
+  putLatest: function (items) {
+    return WalDB.open().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (res) {
+        try {
+          var tx = db.transaction('ops', 'readwrite');
+          tx.objectStore('ops').put({ items: items, ts: Date.now() }, 'latest');
+          tx.oncomplete = function () { res(true); };
+          tx.onerror = function () { res(false); };
+        } catch (e) { res(false); }
+      });
+    });
+  },
+  readLatest: function () {
+    return WalDB.open().then(function (db) {
+      if (!db) return null;
+      return new Promise(function (res) {
+        try {
+          var rq = db.transaction('ops', 'readonly').objectStore('ops').get('latest');
+          rq.onsuccess = function () { res(rq.result || null); };
+          rq.onerror = function () { res(null); };
+        } catch (e) { res(null); }
+      });
+    });
+  }
+};
+
+/* ---------------- Deteksi 2 tab (Sprint 5 FR-42: tab kedua read-only) ---------------- */
+var TAB_ID = 'tab-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function tabHeartbeat() {
+  try {
+    var cur = null;
+    try { cur = JSON.parse(localStorage.getItem('labipa.activetab') || 'null'); } catch (e) {}
+    var mine = { id: TAB_ID, ts: Date.now() };
+    if (!cur || cur.id === TAB_ID || Date.now() - cur.ts > 5000) {
+      try { localStorage.setItem('labipa.activetab', JSON.stringify(mine)); } catch (e) {}
+      if (window.LABIPA_SECOND_TAB) {
+        window.LABIPA_SECOND_TAB = false;
+        try { document.dispatchEvent(new CustomEvent('labipa:tab-role')); } catch (e) {}
+      }
+    } else {
+      if (!window.LABIPA_SECOND_TAB) {
+        window.LABIPA_SECOND_TAB = true;
+        try { document.dispatchEvent(new CustomEvent('labipa:tab-role')); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+}
+try { setInterval(tabHeartbeat, 2000); tabHeartbeat(); } catch (e) {}
+try { window.addEventListener('beforeunload', function () {
+  try {
+    var cur = JSON.parse(localStorage.getItem('labipa.activetab') || 'null');
+    if (cur && cur.id === TAB_ID) localStorage.removeItem('labipa.activetab');
+  } catch (e) {}
+}); } catch (e) {}
+
 /* ---------------- flags ---------------- */
 function loadFlags() {
   return fetch('/api/flags').then(function (r) { return r.json(); }).then(function (j) {
     window.LABIPA_FLAGS = { allowGuest: !!(j && j.allowGuest), liveEdit: !!(j && j.liveEdit) };
+    // Sprint 4: TURN dari env server → iceServers WebRTC (tanpa ubah kode)
+    try {
+      if (j && j.turn && j.turn.length && window.VOICE_CONFIG && window.VOICE_CONFIG.iceServers) {
+        j.turn.forEach(function (t) {
+          var exists = window.VOICE_CONFIG.iceServers.some(function (x) { return x.urls === t.urls; });
+          if (!exists) window.VOICE_CONFIG.iceServers.push(t);
+        });
+      }
+    } catch (e) {}
     try { document.dispatchEvent(new CustomEvent('labipa:flags', { detail: window.LABIPA_FLAGS })); } catch (e) {}
     return window.LABIPA_FLAGS;
   }).catch(function () {
@@ -340,6 +425,7 @@ function loadFlags() {
 window.LabIPA = {
   Auth: AuthModule,
   Gate: Gate,
+  Wal: WalDB,
   Storage: StorageAdapter,
   Remote: RemoteStore,
   Cache: LocalCache,

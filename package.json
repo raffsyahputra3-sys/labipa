@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "lint": "eslint server.js scripts/ public/js/ 2>&1 | head -50",
     "rotate-key": "node scripts/gate-cli.js rotate",
     "reset-key": "node scripts/gate-cli.js reset",
     "verify-key": "node scripts/gate-cli.js verify"

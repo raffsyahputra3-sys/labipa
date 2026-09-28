@@ -897,6 +897,22 @@ canvas{display:block}
 .gate-note{font-size:11px;color:#8B7355;margin-top:10px;line-height:1.6}
 #gateBanner{display:none;position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:9000;background:#B91C1C;color:#fff;font-family:IBM Plex Mono,monospace;font-size:11px;padding:8px 16px;border-radius:4px}
 #gateBanner.on{display:block}
+#netBanner{display:none;position:fixed;top:54px;left:50%;transform:translateX(-50%);z-index:9000;background:#2A4A78;color:#fff;font-family:IBM Plex Mono,monospace;font-size:11px;padding:8px 16px;border-radius:4px}
+#netBanner.on{display:block}
+#worldModal,#conflictModal{position:fixed;inset:0;z-index:9500;background:rgba(27,42,65,.55);display:flex;align-items:center;justify-content:center}
+.wm-card{width:min(480px,92vw);max-height:84vh;overflow-y:auto;background:#EDE7D3;border:1px solid #1B2A41;border-radius:8px;padding:18px;color:#1B2A41}
+.wm-head{display:flex;justify-content:space-between;align-items:center;font-family:IBM Plex Mono,monospace;font-weight:700;margin-bottom:8px}
+.wm-head button{background:none;border:none;font-size:16px;cursor:pointer;color:#1B2A41}
+.wm-meta{font-family:IBM Plex Mono,monospace;font-size:11px;line-height:1.8;margin-bottom:10px}
+.wm-actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.wm-actions button{flex:1;border:1px solid #1B2A41;background:transparent;color:#1B2A41;font-family:IBM Plex Mono,monospace;font-size:11px;padding:6px 4px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.wm-actions button:hover{background:#1B2A41;color:#F5F0E0}
+.wm-sect{font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:.12em;color:#8B7355;margin:8px 0 6px}
+#wmCps{display:flex;flex-direction:column;gap:6px}
+.wm-cp{border:1px solid #B9A88A;border-radius:4px;padding:6px 8px;font-family:IBM Plex Mono,monospace;font-size:11px}
+.wm-cp .row{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.wm-cp button{border:1px solid #1B2A41;background:transparent;border-radius:3px;font-size:10px;padding:2px 8px;cursor:pointer}
+.wm-cp button:hover{background:#1B2A41;color:#fff}
 .mp-player .crown[title="mic aktif"]{
   color:#2E7C4A;
   font-size:12px;
@@ -1360,6 +1376,33 @@ div[data-mppanel="solo"] .cover-cta{
   </div>
 </div>
 <div id="gateBanner">🔒 Sesi terkunci, autosave dijeda.</div>
+<div id="netBanner">🔄 Koneksi terputus — menyambung ulang…</div>
+<!-- Sprint 2/5: modal Detail dunia + modal konflik 409 -->
+<div id="worldModal" style="display:none">
+  <div class="wm-card">
+    <div class="wm-head"><span id="wmTitle">Detail dunia</span><button id="wmClose" type="button">✕</button></div>
+    <div class="wm-meta" id="wmMeta"></div>
+    <div class="wm-actions">
+      <button id="wmCheckpoint" type="button">📌 Checkpoint</button>
+      <button id="wmFork" type="button">⑂ Fork</button>
+      <button id="wmArchive" type="button">📦 Arsip</button>
+      <button id="wmRestore" type="button">♻ Restore</button>
+    </div>
+    <div class="wm-sect">CHECKPOINT</div>
+    <div id="wmCps"></div>
+  </div>
+</div>
+<div id="conflictModal" style="display:none">
+  <div class="wm-card">
+    <div class="wm-head"><span>Konflik versi layout</span></div>
+    <div class="wm-meta" id="cfText">Layout berubah di server. Pilih:</div>
+    <div class="wm-actions">
+      <button id="cfLoad" type="button">⬇ Muat versi server</button>
+      <button id="cfForce" type="button">⬆ Timpa dengan milikku</button>
+      <button id="cfCancel" type="button">Batal</button>
+    </div>
+  </div>
+</div>
 
 <div id="topbar">
   <div class="brand">
@@ -1407,6 +1450,15 @@ div[data-mppanel="solo"] .cover-cta{
   </button>
   <button class="tb-btn icon-only" id="btnLoad" title="Muat tata letak (J)">
     <span class="ico">📂</span>
+  </button>
+  <button class="tb-btn icon-only" id="btnPublish" title="Publish layout ke kelas (guru)">
+    <span class="ico">📢</span>
+  </button>
+  <button class="tb-btn icon-only" id="btnClone" title="Duplikat layout">
+    <span class="ico">⧉</span>
+  </button>
+  <button class="tb-btn icon-only" id="btnCheckpoint" title="Checkpoint manual dunia">
+    <span class="ico">📌</span>
   </button>
   <button class="tb-btn icon-only" id="btnReset" title="Reset ruangan (R)">
     <span class="ico">🗑</span>
@@ -3811,6 +3863,8 @@ function setGhostColor(hex){
 function startPlacement(itemKey){
   // PRD v2 FR-08: siswa penonton Live Edit = read-only
   try{if(window.LabIPA&&window.LabIPA.isViewer&&window.LabIPA.isViewer()){showToast('Mode menonton — Live Edit guru sedang berjalan');return;}}catch(e){}
+  // Sprint 5 FR-42: tab kedua = read-only
+  try{if(window.LABIPA_SECOND_TAB){showToast('Tab kedua mode menonton — edit di tab utama');return;}}catch(e){}
   if(PLACEMENT.active)cancelPlacement();
   const def=MAKERS[itemKey];if(!def)return;
   PLACEMENT.active=true;PLACEMENT.item=itemKey;PLACEMENT.rotY=0;PLACEMENT.dist=2.4;
@@ -4068,6 +4122,7 @@ function mpPostStateToParent(){
   MP.socket.on('connect',()=>{
     MP.uid=MP.socket.id;
     MP.ready=true;
+    try{const nb=document.getElementById('netBanner');if(nb)nb.classList.remove('on');}catch(e){}
     voiceInitSocketListeners();   // idempotent (dijaga flag di dalam)
     if(availEl){
       availEl.textContent='Server multiplayer siap · kamu = '+MP.uid.slice(0,6);
@@ -4081,6 +4136,7 @@ function mpPostStateToParent(){
   // Reconnect otomatis: gabung ulang room terakhir (create/join) + voice:start ulang.
   // Tanpa ini user harus reload halaman tiap koneksi putus sesaat.
   MP.socket.on('reconnect',(n)=>{
+    try{const nb=document.getElementById('netBanner');if(nb)nb.classList.remove('on');}catch(e){}
     if(availEl){
       availEl.textContent='Tersambung ulang (#'+n+') · kamu = '+(MP.uid||'').slice(0,6);
       availEl.classList.remove('err');availEl.classList.add('ok');
@@ -4093,6 +4149,8 @@ function mpPostStateToParent(){
 
   MP.socket.on('disconnect',(reason)=>{
     MP.ready=false;
+    // Sprint 5: banner reconnect terlihat (bukan diam)
+    try{const nb=document.getElementById('netBanner');if(nb)nb.classList.add('on');}catch(e){}
     // JANGAN matikan MP.enabled/MP.code: Socket.IO reconnect otomatis,
     // lalu mpAutoRejoin() mengembalikan sesi tanpa reload halaman.
     if(availEl){
@@ -4148,6 +4206,9 @@ function mpPostStateToParent(){
     appStarted=true;updateCover();setCamMode('orbit');
     mpRenderPlayerList();
     showToast('Masuk room '+mpFormatRoom(MP.code)+(MP.isHost?' (host)':''));
+    try{
+      if(state.status==='archived'||state.status==='read-only')showToast('Dunia '+state.status+' — read-only. Fork untuk mengedit.');
+    }catch(e){}
     try{if(VOICE_RTC.active())VOICE_RTC.onRoom(state.peers||[]);}catch(e){}
     // PRD v2 FR-08: host di room kelas = Live Edit menyala (badge merah)
     try{if(state.isClass&&MP.isHost)mpSetLiveBadge(true);else mpSetLiveBadge(false);}catch(e){}
@@ -4231,7 +4292,6 @@ function mpPostStateToParent(){
 
   MP.socket.on('world:update',(m)=>{
     if(m.itemsUpdatedBy===MP.uid)return;
-    // PRD v2 FR-08 Live Edit: siswa penonton (read-only) tetap menerima render
     try{
       if(window.LabIPA&&window.LabIPA.isViewer&&window.LabIPA.isViewer()){
         window.LABIPA_LIVE=true;
@@ -4252,6 +4312,10 @@ function mpSetLiveBadge(on){
   MP.socket.on('room:host',(m)=>{
     if(m.peer===MP.uid){MP.isHost=true;showToast('Kamu sekarang host');}
     mpRenderPlayerList();
+  });
+  // Sprint 2: server menolak edit di dunia read-only/archived
+  MP.socket.on('world:denied',(m)=>{
+    showToast('Dunia '+(m&&m.reason==='archived'?'diarsip (read-only)':'read-only')+' — edit ditolak. Fork untuk mengedit.');
   });
 })();
 
@@ -4472,7 +4536,7 @@ document.getElementById('mpLockBtn').addEventListener('click',function(){
           }
         }catch(e){}
         b.innerHTML='<span class="w-code">'+String(w.code).replace(/</g,'&lt;')+'</span> · '+(w.itemCount||0)+' item'+
-          '<span class="w-meta">Terakhir: '+ago+(w.lastActivityBy?(' ('+String(w.lastActivityBy).replace(/</g,'&lt;')+')'):'')+(w.online?(' · 🟢 '+w.online+' online'):'')+'</span>';
+          '<span class="w-meta">Terakhir: '+ago+(w.lastActivityBy?(' ('+String(w.lastActivityBy).replace(/</g,'&lt;')+')'):'')+(w.online?(' · 🟢 '+w.online+' online'):'')+(w.status&&w.status!=='active'?(' · '+w.status):'')+'</span>';
         b.addEventListener('click',function(){
           const jc=document.getElementById('mpJoinCode');
           if(jc)jc.value=w.code;
@@ -4480,6 +4544,9 @@ document.getElementById('mpLockBtn').addEventListener('click',function(){
           document.querySelectorAll('.mp-panel').forEach(function(p){p.classList.toggle('on',p.dataset.mppanel==='join');});
           try{showToast('Kode diisi: '+w.code+' — klik Gabung & Mulai');}catch(e){}
         });
+        // Sprint 5: klik-kanan / tombol detail — pakai dblclick untuk Detail agar 1 klik tetap join
+        b.addEventListener('dblclick',function(ev){try{ev.stopPropagation();}catch(e){}openWorldDetail(w.code);});
+        b.title='Klik: isi kode join · Dobel-klik: detail dunia';
         list.appendChild(b);
       });
     }).catch(function(){});
@@ -4487,6 +4554,56 @@ document.getElementById('mpLockBtn').addEventListener('click',function(){
   // PRD v4.0 FR-18/21: boot gate — overlay sebelum app bila server mewajibkan
   try{
     if(window.LabIPA&&window.LabIPA.Gate)labipaGateBoot();
+  }catch(e){}
+  // Sprint 5 FR-43: kamera terakhir per user (restore) + polling notifikasi
+  try{
+    let camRestored=false;
+    setInterval(function(){
+      try{
+        if(typeof camMode==='undefined')return;
+        if(!camRestored){
+          camRestored=true;
+          try{
+            const raw=localStorage.getItem('labipa.camera');
+            if(raw){
+              const c=JSON.parse(raw);
+              if(c&&c.mode&&typeof setCamMode==='function'&&c.mode!==camMode){try{setCamMode(c.mode);}catch(e){}}
+              if(c&&c.orbit&&typeof orbit!=='undefined'&&orbit.target){
+                orbit.target.set(c.orbit.x||0,c.orbit.y||0,c.orbit.z||0);
+                if(typeof c.orbit.theta==='number')orbit.theta=c.orbit.theta;
+                if(typeof c.orbit.phi==='number')orbit.phi=c.orbit.phi;
+                if(typeof c.orbit.radius==='number')orbit.radius=c.orbit.radius;
+              }
+            }
+          }catch(e){}
+          return;
+        }
+        const doc={mode:camMode};
+        try{
+          if(typeof orbit!=='undefined'&&orbit.target){
+            doc.orbit={x:orbit.target.x,y:orbit.target.y,z:orbit.target.z,theta:orbit.theta,phi:orbit.phi,radius:orbit.radius};
+          }
+        }catch(e){}
+        try{localStorage.setItem('labipa.camera',JSON.stringify(doc));}catch(e){}
+      }catch(e){}
+    },10000);
+  }catch(e){}
+  try{
+    const seenKey='labipa.notif.seen';
+    setInterval(function(){
+      fetch('/api/notifications').then(function(r){return r.json();}).then(function(j){
+        const items=(j&&j.items)||[];
+        if(!items.length)return;
+        let seen='';
+        try{seen=localStorage.getItem(seenKey)||'';}catch(e){}
+        const fresh=items.filter(function(n){return n.id&&n.id>seen;});
+        if(fresh.length){
+          try{localStorage.setItem(seenKey,items[0].id);}catch(e){}
+          const last=fresh[fresh.length-1];
+          try{showToast('🔔 '+last.text);}catch(e){}
+        }
+      }).catch(function(){});
+    },60000);
   }catch(e){}
 })();
 // PRD v4.0: logika overlay gate (unlock awal + kunci ulang saat idle)
@@ -4514,8 +4631,12 @@ function labipaGateBoot(){
     }).catch(function(e){
       btn.disabled=false;
       if(e&&e.status===403){st.textContent='Diblokir sementara. '+(e.until?('Coba lagi setelah '+e.until):'');}
-      else{st.textContent='Kunci salah.'+(e&&e.attemptsLeft!=null?(' Sisa: '+e.attemptsLeft+' percobaan.'):'');}
-      try{att.textContent='Percobaan tercatat di audit log.';}catch(_){}
+      else{
+        const left=(e&&e.attemptsLeft!=null)?e.attemptsLeft:null;
+        st.textContent='Kunci salah.'+(left!=null?(' Sisa: '+left+' percobaan.'):'');
+        // Sprint 5: counter "Percobaan N dari 5"
+        try{att.textContent=left!=null?('Percobaan: '+(5-left)+' dari 5'):'Percobaan tercatat di audit log.';}catch(_){}
+      }
     });
   };
   btn.addEventListener('click',doUnlock);
@@ -4527,6 +4648,56 @@ function labipaGateBoot(){
   window.LabIPA.Gate.check().then(function(ok){
     if(window.LabIPA.Gate.required()&&!ok)show(false);
   }).catch(function(){});
+}
+// Sprint 5: modal konflik 409 — muat server / timpa / batal
+let labipaPendingItems=null;
+function labipaShowConflict(items, current){
+  labipaPendingItems=items||null;
+  try{
+    const t=document.getElementById('cfText');
+    if(t)t.textContent='Layout berubah di server'+(current&&current.version?(' (v'+current.version+')'):'')+'. Pilih:';
+    document.getElementById('conflictModal').style.display='flex';
+  }catch(e){}
+}
+function labipaHideConflict(){try{document.getElementById('conflictModal').style.display='none';}catch(e){}}
+// Sprint 2/5: modal Detail dunia (metadata + checkpoint + fork/arsip/restore)
+function openWorldDetail(code){
+  code=String(code||'').toUpperCase().slice(0,24);
+  if(!code)return;
+  const m=document.getElementById('worldModal');
+  const meta=document.getElementById('wmMeta');
+  const cps=document.getElementById('wmCps');
+  if(!m||!meta||!cps)return;
+  try{document.getElementById('wmTitle').textContent='Detail: '+code;}catch(e){}
+  meta.textContent='Memuat…';cps.innerHTML='';
+  m.style.display='flex';
+  m.dataset.code=code;
+  fetch('/api/worlds/'+encodeURIComponent(code)+'/state').then(function(r){return r.json();}).then(function(j){
+    const mt=(j&&j.meta)||{};
+    meta.innerHTML='Status: '+(mt.status||'?')+' · '+(mt.itemCount||0)+' item · online '+(mt.online||0)+
+      '<br>Terakhir: '+(mt.lastActivityAt||'?')+(mt.lastActivityBy?(' oleh '+String(mt.lastActivityBy).replace(/</g,'&lt;')):'')+
+      (mt.parentWorldId?('<br>Cabang dari: '+String(mt.parentWorldId).replace(/</g,'&lt;')):'');
+    return fetch('/api/worlds/'+encodeURIComponent(code)+'/checkpoints').then(function(r){return r.json();});
+  }).then(function(j){
+    const items=(j&&j.items)||[];
+    cps.innerHTML=items.length?'':'<div class="wm-cp">Belum ada checkpoint.</div>';
+    items.forEach(function(c){
+      const d=document.createElement('div');d.className='wm-cp';
+      d.innerHTML='<div class="row"><span>'+String(c.name||c.id).replace(/</g,'&lt;')+' · '+(c.itemCount||0)+' item<br>'+String(c.createdAt||'').slice(0,16).replace('T',' ')+' · '+String(c.trigger||'')+'</span></div>';
+      const row=d.firstChild;
+      const rb=document.createElement('button');rb.textContent='Rollback';rb.type='button';
+      rb.addEventListener('click',function(){
+        if(!confirm('Rollback "'+code+'" ke checkpoint ini? State saat ini dicheckpoint dulu.'))return;
+        fetch('/api/worlds/'+encodeURIComponent(code)+'/checkpoints/'+encodeURIComponent(c.id)+'/rollback',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+          .then(function(r){return r.json();}).then(function(jj){
+            if(jj&&jj.ok){showToast('Rollback OK ('+jj.itemCount+' item)');openWorldDetail(code);}
+            else showToast('Rollback gagal: '+((jj&&jj.error)||''));
+          }).catch(function(){showToast('Rollback gagal (jaringan)');});
+      });
+      row.appendChild(rb);
+      cps.appendChild(d);
+    });
+  }).catch(function(){meta.textContent='Gagal memuat.';});
 }
 document.getElementById('mpCopyCode').addEventListener('click',function(){
   if(!MP.code)return;
@@ -4901,6 +5072,7 @@ const VOICE_CONFIG = {
     // Tambah TURN cadangan via: VOICE_CONFIG.iceServers.push({urls:'turn:...',username:'u',credential:'p'})
   ]
 };
+try{window.VOICE_CONFIG=VOICE_CONFIG;}catch(e){} // dibaca LabIPA flags (TURN dari server)
 const VOICE = {
   enabled: false,
   capturing: false,
@@ -5594,6 +5766,87 @@ document.querySelectorAll('#snapBar button').forEach(function(btn){
 document.getElementById('btnKatalog').addEventListener('click',openInventory);
 document.getElementById('btnInfo').addEventListener('click',togglePanel);
 document.getElementById('btnSave').addEventListener('click',saveLayout);
+// Sprint 5: Publish / Clone / Checkpoint manual
+document.getElementById('btnPublish').addEventListener('click',function(){
+  try{
+    const a=labipaAdapter();
+    if(!a||!a.currentId){showToast('Simpan dulu sebelum publish');return;}
+    const cls=(MP.code&&MP.code.length>6)?MP.code:(window.LabIPA.Auth.getSession()||{}).user?.classId;
+    const classId=cls||prompt('Publish ke classId:','8A-IPA-2026');
+    if(!classId)return;
+    window.LabIPA.Remote.publish(a.currentId,classId).then(function(it){
+      showToast('Published ke '+classId+' (v'+it.version+')');
+    }).catch(function(e){showToast('Publish gagal: '+(e.message||e));});
+  }catch(e){showToast('Publish gagal');}
+});
+document.getElementById('btnClone').addEventListener('click',function(){
+  try{
+    const a=labipaAdapter();
+    if(!a||!a.currentId){showToast('Simpan dulu sebelum clone');return;}
+    window.LabIPA.Remote.clone(a.currentId).then(function(it){
+      a.currentId=it.id;a.currentVersion=it.version;
+      showToast('Clone OK: '+it.name);
+    }).catch(function(e){showToast('Clone gagal: '+(e.message||e));});
+  }catch(e){showToast('Clone gagal');}
+});
+document.getElementById('btnCheckpoint').addEventListener('click',function(){
+  try{
+    if(!MP.code){showToast('Join room/dunia dulu');return;}
+    fetch('/api/worlds/'+encodeURIComponent(MP.code)+'/checkpoints',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:''})})
+      .then(function(r){return r.json();}).then(function(j){
+        showToast(j&&j.ok?('Checkpoint OK ('+j.item.itemCount+' item)'):('Gagal: '+((j&&j.error)||'')));
+      }).catch(function(){showToast('Checkpoint gagal (jaringan)');});
+  }catch(e){showToast('Checkpoint gagal');}
+});
+// Sprint 5: modal konflik + modal dunia wiring
+document.getElementById('cfLoad').addEventListener('click',function(){labipaHideConflict();loadLayout();});
+document.getElementById('cfForce').addEventListener('click',function(){
+  labipaHideConflict();
+  try{
+    const a=labipaAdapter();
+    if(!a||!labipaPendingItems){showToast('Tidak ada data');return;}
+    a.save({name:'Layout Lab',items:labipaPendingItems},{force:true}).then(function(r){
+      if(r&&r.version){a.currentVersion=r.version;}
+      showToast('Ditimpa dengan versimu (v'+((r&&r.version)||'?')+')');
+    }).catch(function(e){showToast('Force gagal: '+(e.message||e));});
+  }catch(e){}
+  labipaPendingItems=null;
+});
+document.getElementById('cfCancel').addEventListener('click',labipaHideConflict);
+document.getElementById('wmClose').addEventListener('click',function(){document.getElementById('worldModal').style.display='none';});
+document.getElementById('wmCheckpoint').addEventListener('click',function(){
+  const code=document.getElementById('worldModal').dataset.code;
+  document.getElementById('btnCheckpoint').click();
+  setTimeout(function(){openWorldDetail(code);},800);
+});
+document.getElementById('wmFork').addEventListener('click',function(){
+  const code=document.getElementById('worldModal').dataset.code;
+  const name=prompt('Nama cabang:','Cabang dari '+code);
+  if(!code)return;
+  fetch('/api/worlds/'+encodeURIComponent(code)+'/fork',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||''})})
+    .then(function(r){return r.json();}).then(function(j){
+      if(j&&j.ok){showToast('Fork OK: '+j.code);openWorldDetail(code);}
+      else showToast('Fork gagal: '+((j&&j.error)||''));
+    }).catch(function(){showToast('Fork gagal (jaringan)');});
+});
+document.getElementById('wmArchive').addEventListener('click',function(){
+  const code=document.getElementById('worldModal').dataset.code;
+  if(!code||!confirm('Arsipkan dunia "'+code+'"?'))return;
+  fetch('/api/worlds/'+encodeURIComponent(code)+'/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json();}).then(function(j){
+      showToast(j&&j.ok?'Diarsip.':'Gagal: '+((j&&j.error)||''));
+      if(j&&j.ok)openWorldDetail(code);
+    }).catch(function(){showToast('Arsip gagal (jaringan)');});
+});
+document.getElementById('wmRestore').addEventListener('click',function(){
+  const code=document.getElementById('worldModal').dataset.code;
+  if(!code)return;
+  fetch('/api/worlds/'+encodeURIComponent(code)+'/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json();}).then(function(j){
+      showToast(j&&j.ok?('Restore OK ('+j.itemCount+' item)'):('Gagal: '+((j&&j.error)||'')));
+      if(j&&j.ok)openWorldDetail(code);
+    }).catch(function(){showToast('Restore gagal (jaringan)');});
+});
 const dlBtn=document.getElementById('btnDownload'); if(dlBtn) dlBtn.addEventListener('click',downloadLayoutHTML);
 document.getElementById('btnLoad').addEventListener('click',loadLayout);
 document.getElementById('btnReset').addEventListener('click',function(){
@@ -5629,7 +5882,8 @@ function saveLayout(){
         if(r&&r.offline)showToast('Disimpan offline ('+items.length+' item) — tersinkron nanti');
         else showToast('Disimpan ke server ('+items.length+' item, v'+(r&&r.version||'?')+')');
       }).catch(function(e){
-        if(e&&e.status===409)showToast('Konflik versi — muat ulang layout terbaru!');
+        // Sprint 5: konflik → modal pilihan (bukan toast)
+        if(e&&e.status===409){labipaShowConflict(items,(e.body&&e.body.current)||null);}
         else showToast('Gagal simpan server, cache lokal dipakai');
       });
       return;

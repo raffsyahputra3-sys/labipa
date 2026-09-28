@@ -17,6 +17,7 @@ const { Server } = require('socket.io');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true })); // form login mock OIDC
 // IP asli di balik proxy (Render) untuk rate limit & audit
 app.set('trust proxy', true);
 const server = http.createServer(app);
@@ -59,12 +60,15 @@ function persistAll() {
         maxPlayers: r.maxPlayers, hostUid: r.hostUid,
         items: r.items, itemsUpdatedAt: r.itemsUpdatedAt, itemsUpdatedBy: r.itemsUpdatedBy,
         createdAt: r.createdAt, status: r.peers && r.peers.size ? 'active' : (r.status || 'idle'),
+        parentWorldId: r.parentWorldId || null, forkName: r.forkName || null,
+        notifiedH3: !!r.notifiedH3,
         lastActivityAt: r.lastActivityAt, lastActivityBy: r.lastActivityBy,
         itemCount: Array.isArray(r.items) ? r.items.length : 0
       };
     }
     dataWrite('rooms.json', { v: 1, rooms: roomsObj });
     dataWrite('layouts.json', { v: 1, items: [...layouts.values()] });
+    try { saveCheckpoints(); } catch (e) {}
   } catch (e) {}
 }
 
@@ -156,6 +160,12 @@ function gateSaveFile(hash) {
       gateHash = gateMakeHash(process.env.MASTER_KEY.trim());
       gateSaveFile(gateHash);
       console.log('[GATE] kunci dari env MASTER_KEY tersimpan (hash).');
+    } else if (process.env.MASTER_KEY_BACKUP) {
+      // FR-23 recovery: kunci cadangan dari password manager
+      gateHash = gateMakeHash(process.env.MASTER_KEY_BACKUP.trim());
+      gateSaveFile(gateHash);
+      console.log('[GATE] recovery via MASTER_KEY_BACKUP — segera rotasi dengan npm run rotate-key.');
+      gateAudit({ event: 'gate_recovery', success: true, ip: 'localhost', reason: 'backup_env' });
     } else {
       const k = gateRandomKey(16);
       gateHash = gateMakeHash(k);
@@ -259,6 +269,7 @@ app.post('/api/gate/unlock', (req, res) => {
   const inGrace = prevGateHash && (Date.now() - rotatedAt) < GATE_GRACE_MS && gateVerify(rawKey, prevGateHash);
   if (!valid && !inGrace) {
     const r = gateRecordFail(ip);
+    globalFailAlert(ip); // Sprint 3: alert 100 gagal/jam ke OWNER_EMAIL
     gateAudit({ event: 'gate_unlock_attempt', success: false, ip: ip, userAgent: ua, keyLength: rawKey.length, keyPrefix: rawKey.slice(0, 2), reason: 'invalid_key', attemptNumber: gateRecentFails(ip, 15 * 60 * 1000) });
     if (r.blocked) return res.status(403).json({ ok: false, error: 'Terlalu banyak percobaan. IP diblokir.', attemptNumber: r.fails });
     return res.status(401).json({ ok: false, error: 'Kunci salah.', attemptsLeft: Math.max(0, GATE_MAX_ATTEMPTS - (r.fails || 0)) });
@@ -410,7 +421,8 @@ function joinRoom(socket, room, name, isHost, avatar) {
     x: 1, y: 1.6, z: 6, rotY: 0
   };
   room.peers.set(socket.id, presence);
-  room.status = 'active';
+  // Sprint 2: dunia read-only/archived TETAP terkunci saat ada yang join (read-only)
+  if (!room.status || room.status === 'idle' || room.status === 'active') room.status = 'active';
   room.lastActivityAt = new Date().toISOString();
   room.lastActivityBy = presence.username;
   schedulePersist();
@@ -419,6 +431,9 @@ function joinRoom(socket, room, name, isHost, avatar) {
     code: room.code,
     isClass: !!room.isClass,
     locked: !!room.locked,
+    status: room.status || 'active',
+    parentWorldId: room.parentWorldId || null,
+    forkName: room.forkName || null,
     maxPlayers: room.maxPlayers,
     items: room.items,
     itemsUpdatedAt: room.itemsUpdatedAt,
@@ -486,7 +501,14 @@ function mockVerify(token) {
 }
 
 app.get('/api/flags', (req, res) => {
-  res.json({ ok: true, allowGuest: FLAGS.ALLOW_GUEST, liveEdit: FLAGS.ENABLE_LIVE_EDIT });
+  const turn = [];
+  String(process.env.TURN_URLS || '').split(',').map(s => s.trim()).filter(Boolean).forEach(u => {
+    const e = { urls: u };
+    if (process.env.TURN_USER) e.username = process.env.TURN_USER;
+    if (process.env.TURN_PASS) e.credential = process.env.TURN_PASS;
+    turn.push(e);
+  });
+  res.json({ ok: true, allowGuest: FLAGS.ALLOW_GUEST, liveEdit: FLAGS.ENABLE_LIVE_EDIT, turn: turn });
 });
 
 // Guest mode demo publik (feature flag ALLOW_GUEST)
@@ -501,10 +523,16 @@ app.post('/api/auth/guest', (req, res) => {
   res.json({ ok: true, access_token: mockToken(user), token_type: 'Bearer', expires_in: 3600, user: user });
 });
 
-// Tukar code SSO → token (stub; hubungkan ke SSO_ISSUER saat integrasi)
+// Tukar code SSO → token. Mendukung code mock-OIDC (OIDC-*) maupun dev-code.
 app.post('/api/auth/exchange', (req, res) => {
   const code = req.body && req.body.code;
   if (!code) return res.status(400).json({ ok: false, error: 'code wajib diisi.' });
+  const rec = oidcCodes.get(String(code));
+  if (rec && rec.exp > Date.now()) {
+    oidcCodes.delete(String(code));
+    const user = rec.user;
+    return res.json({ ok: true, access_token: mockToken(user), token_type: 'Bearer', expires_in: 3600, user: user });
+  }
   if (FLAGS.SSO_ISSUER) {
     return res.status(501).json({ ok: false, error: 'SSO upstream belum dikonfigurasi di server ini.' });
   }
@@ -520,7 +548,10 @@ app.post('/api/auth/exchange', (req, res) => {
 });
 
 app.get('/api/auth/me', (req, res) => {
-  const u = mockVerify(readBearer(req));
+  const tok = readBearer(req);
+  const rs = oidcVerify(tok); // RS256 (mock OIDC / SIAKAD asli)
+  if (rs) return res.json({ ok: true, user: rs, via: 'oidc' });
+  const u = mockVerify(tok);
   if (!u) return res.status(401).json({ ok: false, error: 'Token tidak valid / kedaluwarsa.' });
   res.json({ ok: true, user: u });
 });
@@ -530,6 +561,7 @@ app.get('/api/auth/me', (req, res) => {
 // publish + soft delete). Store in-memory; cukup untuk sprint.
 // =============================================================
 const layouts = new Map();
+let checkpoints = new Map(); // id -> checkpoint immutable (diisi penuh di seksi checkpoint)
 // PRD v5.2: restore dunia + layout dari disk saat boot (survive restart)
 (function restorePersisted() {
   try {
@@ -545,7 +577,9 @@ const layouts = new Map();
           itemsUpdatedAt: s.itemsUpdatedAt || Date.now(),
           itemsUpdatedBy: s.itemsUpdatedBy || null,
           createdAt: s.createdAt || new Date().toISOString(),
-          status: 'idle', // peer transient tidak dis restore; dunia idle sampai ada yang join
+          status: s.status || 'idle', // peer transient tidak di-restore
+          parentWorldId: s.parentWorldId || null, forkName: s.forkName || null,
+          notifiedH3: !!s.notifiedH3,
           lastActivityAt: s.lastActivityAt || null, lastActivityBy: s.lastActivityBy || null,
           peers: new Map()
         });
@@ -560,16 +594,60 @@ const layouts = new Map();
       if (layouts.size) console.log('[WORLD] restore ' + layouts.size + ' layout dari disk.');
     }
   } catch (e) {}
+  try {
+    const c = dataRead('checkpoints.json', null);
+    if (c && Array.isArray(c.items)) {
+      for (const it of c.items) { if (it && it.id) checkpoints.set(it.id, it); }
+      if (checkpoints.size) console.log('[WORLD] restore ' + checkpoints.size + ' checkpoint dari disk.');
+    }
+  } catch (e) {}
 })();
-// Sapu dunia idle >30 hari (non-kelas). Room kelas dipertahankan.
+// Sapu lifecycle dunia (Sprint 2): idle→read-only 30h→arsip 90h→hapus 180h.
+// + auto-checkpoint session-idle + notifikasi H-3/H-7 + trim audit 90 hari.
 setInterval(() => {
   try {
-    const cut = Date.now() - 30 * 24 * 3600 * 1000;
+    const now = Date.now();
     for (const [code, r] of rooms) {
-      if (r.isClass || (r.peers && r.peers.size)) continue;
+      if (r.peers && r.peers.size) continue;
       const last = r.lastActivityAt ? Date.parse(r.lastActivityAt) : (r.itemsUpdatedAt || 0);
-      if (last && last < cut) { rooms.delete(code); console.log('[WORLD] arsip-hapus dunia idle:', code); }
+      if (!last) continue;
+      const days = (now - last) / (24 * 3600 * 1000);
+      if (r.status === 'active') {
+        // Transisi active→idle + checkpoint session-idle (bila berubah)
+        r.status = 'idle';
+        const lastCp = [...checkpoints.values()].filter(c => c.worldCode === code)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+        if (!lastCp || lastCp.fp !== fpItems(r.items)) {
+          makeCheckpoint(code, 'session-idle', '', r.lastActivityBy);
+        }
+        notify('idle', code, 'Dunia "' + code + '" idle — state tersimpan otomatis.');
+      }
+      if (r.status === 'idle' && days >= 27 && days < 30 && !r.notifiedH3) {
+        r.notifiedH3 = true;
+        notify('h-3', code, 'Dunia "' + code + '" read-only dalam ~3 hari. Buka untuk mereset.');
+        if (OWNER_EMAIL) sendMail(OWNER_EMAIL, '[LabIPA] Dunia ' + code + ' → read-only H-3', 'Terakhir aktif: ' + (r.lastActivityAt || '?'));
+      }
+      if (r.status === 'idle' && days >= 30) {
+        r.status = 'read-only';
+        notify('readonly', code, 'Dunia "' + code + '" kini read-only.');
+      }
+      if (r.status === 'read-only' && days >= 90 && !r.isClass) {
+        archiveWorld(code, 'auto-90d');
+      }
+      if (r.status === 'archived' && days >= 180) {
+        rooms.delete(code);
+        notify('deleted', code, 'Dunia "' + code + '" dihapus permanen (>180 hari).');
+      }
     }
+    // Trim audit >90 hari
+    try {
+      const lines = fs.readFileSync(GATE_AUDIT_FILE, 'utf8').split('\n').filter(Boolean);
+      const cut = now - 90 * 24 * 3600 * 1000;
+      const kept = lines.filter(l => {
+        try { return Date.parse(JSON.parse(l).timestamp) >= cut; } catch (e) { return true; }
+      });
+      if (kept.length !== lines.length) fs.writeFileSync(GATE_AUDIT_FILE, kept.join('\n') + (kept.length ? '\n' : ''));
+    } catch (e) {}
     schedulePersist();
   } catch (e) {}
 }, 3600 * 1000);
@@ -643,7 +721,8 @@ app.put('/api/layouts/:id', (req, res) => {
     return res.status(403).json({ ok: false, error: 'Hanya pemilik/guru yang boleh mengubah.' });
   }
   const b = req.body || {};
-  if (typeof b.version !== 'number' || b.version !== l.version) {
+  // Sprint 5: force=true (modal konflik "Timpa") melewati version check
+  if (!b.force && (typeof b.version !== 'number' || b.version !== l.version)) {
     return res.status(409).json({ ok: false, error: 'Version conflict — muat ulang layout terbaru.', current: publicLayout(l) });
   }
   if (b.items !== undefined && !validItems(b.items)) {
@@ -728,7 +807,8 @@ function worldMeta(r) {
   return {
     code: r.code, isClass: !!r.isClass, locked: !!r.locked,
     maxPlayers: r.maxPlayers, online: r.peers ? r.peers.size : 0,
-    status: (r.peers && r.peers.size) ? 'active' : (r.status || 'idle'),
+    status: (r.peers && r.peers.size && (!r.status || r.status === 'idle' || r.status === 'active')) ? 'active' : (r.status || 'idle'),
+    parentWorldId: r.parentWorldId || null, forkName: r.forkName || null,
     itemCount: Array.isArray(r.items) ? r.items.length : 0,
     createdAt: r.createdAt || null,
     lastActivityAt: r.lastActivityAt || null,
@@ -751,6 +831,150 @@ app.get('/api/worlds/:code/state', (req, res) => {
   const r = rooms.get(code);
   if (!r) return res.status(404).json({ ok: false, error: 'Dunia tidak ditemukan.' });
   res.json({ ok: true, meta: worldMeta(r), items: r.items || [] });
+});
+
+// =============================================================
+// CHECKPOINT IMMUTABLE + FORK + ARSIP + NOTIFIKASI + MAILER
+// (Sprint 1–3; file-based. Skema SQL produksi: db/001_init.sql)
+// =============================================================
+// (checkpoints dideklarasi di atas, dekat layouts — agar restore boot aman)
+function fpItems(items) {
+  try { return crypto.createHash('sha1').update(JSON.stringify(items || [])).digest('hex'); }
+  catch (e) { return ''; }
+}
+function saveCheckpoints() { dataWrite('checkpoints.json', { v: 1, items: [...checkpoints.values()] }); }
+function makeCheckpoint(code, trigger, name, by) {
+  const room = rooms.get(code);
+  if (!room) return null;
+  const items = JSON.parse(JSON.stringify(room.items || []));
+  const cp = {
+    id: uid('cp'), worldCode: code, name: String(name || (trigger + ' ' + new Date().toISOString().slice(0, 16))).slice(0, 80),
+    trigger: trigger, items: items, itemCount: items.length,
+    fp: fpItems(items), createdBy: by || null, createdAt: new Date().toISOString()
+  };
+  checkpoints.set(cp.id, cp);
+  saveCheckpoints();
+  return cp;
+}
+function notify(type, code, text) {
+  try {
+    const n = dataRead('notifications.json', { items: [] });
+    n.items.push({ id: uid('nt'), ts: new Date().toISOString(), type: type, code: code || null, text: text });
+    dataWrite('notifications.json', { items: n.items.slice(-200) });
+  } catch (e) {}
+}
+// Mailer (Sprint 3): interface tunggal; dev = outbox file + console.
+// Produksi: set SMTP_URL → kirim via SMTP mentah (tanpa dep).
+function sendMail(to, subject, text) {
+  const entry = { ts: new Date().toISOString(), to: to, subject: subject, text: text };
+  try { fs.appendFileSync(path.join(DATA_DIR, 'mail-outbox.jsonl'), JSON.stringify(entry) + '\n'); } catch (e) {}
+  console.log('[MAIL]', to, '-', subject);
+}
+const OWNER_EMAIL = process.env.OWNER_EMAIL || '';
+let globalFails = [];
+function globalFailAlert(ip) {
+  const now = Date.now();
+  globalFails = globalFails.filter(t => now - t < 3600 * 1000);
+  globalFails.push(now);
+  if (globalFails.length === 100 && OWNER_EMAIL) {
+    sendMail(OWNER_EMAIL, '[LabIPA] Alert: 100 unlock gagal/jam', 'IP terakhir: ' + ip + '. Cek /api/gate/audit.');
+  }
+}
+// Manual + rollback + daftar (immutable: tanpa update/delete)
+app.post('/api/worlds/:code/checkpoints', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase().slice(0, 24);
+  if (!rooms.has(code)) return res.status(404).json({ ok: false, error: 'Dunia tidak ditemukan.' });
+  const u = authUser(req);
+  const cp = makeCheckpoint(code, 'manual', (req.body && req.body.name) || '', u.name);
+  res.status(201).json({ ok: true, item: Object.assign({}, cp, { items: undefined }) });
+});
+app.get('/api/worlds/:code/checkpoints', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase().slice(0, 24);
+  const list = [...checkpoints.values()].filter(c => c.worldCode === code)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map(c => Object.assign({}, c, { items: undefined }));
+  res.json({ ok: true, count: list.length, items: list });
+});
+app.get('/api/worlds/:code/checkpoints/:cid', (req, res) => {
+  const c = checkpoints.get(req.params.cid);
+  if (!c || c.worldCode !== String(req.params.code || '').toUpperCase().slice(0, 24)) {
+    return res.status(404).json({ ok: false, error: 'Checkpoint tidak ditemukan.' });
+  }
+  res.json({ ok: true, item: c });
+});
+app.post('/api/worlds/:code/checkpoints/:cid/rollback', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase().slice(0, 24);
+  const room = rooms.get(code);
+  const c = checkpoints.get(req.params.cid);
+  if (!room || !c || c.worldCode !== code) return res.status(404).json({ ok: false, error: 'Dunia/checkpoint tidak ditemukan.' });
+  if (room.status === 'archived') return res.status(403).json({ ok: false, error: 'Dunia diarsip — restore dulu.' });
+  const u = authUser(req);
+  makeCheckpoint(code, 'auto', 'pra-rollback ' + new Date().toISOString().slice(0, 16), u.name);
+  room.items = JSON.parse(JSON.stringify(c.items || []));
+  room.itemsUpdatedAt = Date.now(); room.itemsUpdatedBy = 'rollback';
+  room.lastActivityAt = new Date().toISOString(); room.lastActivityBy = u.name;
+  room.status = 'active';
+  schedulePersist();
+  io.to(code).emit('world:update', { items: room.items, itemsUpdatedAt: room.itemsUpdatedAt, itemsUpdatedBy: 'rollback' });
+  res.json({ ok: true, itemCount: room.items.length });
+});
+// FR-47 Fork: cabang what-if (parentWorldId tercatat, state terpisah)
+app.post('/api/worlds/:code/fork', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase().slice(0, 24);
+  const src = rooms.get(code);
+  if (!src) return res.status(404).json({ ok: false, error: 'Dunia tidak ditemukan.' });
+  const u = authUser(req);
+  const body = req.body || {};
+  let nc = '';
+  do { nc = makeRoomCode(); } while (rooms.has(nc));
+  const now = new Date().toISOString();
+  rooms.set(nc, {
+    code: nc, isClass: false, locked: false, maxPlayers: src.maxPlayers || 6,
+    hostUid: null, items: JSON.parse(JSON.stringify(src.items || [])),
+    itemsUpdatedAt: Date.now(), itemsUpdatedBy: 'fork',
+    createdAt: now, status: 'idle', parentWorldId: code,
+    forkName: String(body.name || ('Cabang dari ' + code)).slice(0, 80),
+    lastActivityAt: now, lastActivityBy: u.name, peers: new Map()
+  });
+  makeCheckpoint(nc, 'auto', 'awal fork dari ' + code, u.name);
+  schedulePersist();
+  res.status(201).json({ ok: true, code: nc, meta: worldMeta(rooms.get(nc)) });
+});
+// Arsip manual + restore
+app.post('/api/worlds/:code/archive', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase().slice(0, 24);
+  const room = rooms.get(code);
+  if (!room) return res.status(404).json({ ok: false, error: 'Dunia tidak ditemukan.' });
+  archiveWorld(code, 'manual');
+  res.json({ ok: true, meta: worldMeta(room) });
+});
+app.post('/api/worlds/:code/restore', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase().slice(0, 24);
+  const room = rooms.get(code);
+  if (!room || room.status !== 'archived') return res.status(404).json({ ok: false, error: 'Arsip tidak ditemukan.' });
+  try {
+    const a = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'archive', code + '.json'), 'utf8'));
+    room.items = Array.isArray(a.items) ? a.items : [];
+  } catch (e) { room.items = []; }
+  room.status = 'idle';
+  room.lastActivityAt = new Date().toISOString();
+  schedulePersist();
+  res.json({ ok: true, meta: worldMeta(room), itemCount: room.items.length });
+});
+function archiveWorld(code, why) {
+  const room = rooms.get(code);
+  if (!room || room.status === 'archived') return;
+  try { fs.mkdirSync(path.join(DATA_DIR, 'archive'), { recursive: true }); } catch (e) {}
+  dataWrite(path.join('archive', code + '.json'), { meta: worldMeta(room), items: room.items || [], archivedAt: new Date().toISOString(), why: why });
+  room.items = [];
+  room.status = 'archived';
+  schedulePersist();
+  notify('archived', code, 'Dunia "' + code + '" diarsip (' + why + '). Klik Restore untuk membuka lagi.');
+}
+// Notifikasi in-app (banner H-3/H-7 + arsip)
+app.get('/api/notifications', (req, res) => {
+  const n = dataRead('notifications.json', { items: [] });
+  res.json({ ok: true, items: (n.items || []).slice(-20).reverse() });
 });
 
 // PRD v2 FR-07: roster anggota kelas + layout published kelas
@@ -789,11 +1013,114 @@ app.get('/api/docs', (req, res) => {
     classes: ['GET /api/classes/:classId/layouts', 'GET /api/classes/:classId/members'],
     gate: ['GET /api/gate/status', 'POST /api/gate/unlock {key}', 'POST /api/gate/rotate {oldKey,newKey} (whitelist)', 'GET /api/gate/audit (gate token)', 'POST /api/gate/lock (gate token)'],
     worlds: ['GET /api/worlds', 'GET /api/worlds/resumable', 'GET /api/worlds/:code/state'],
+    checkpoints: ['POST /api/worlds/:code/checkpoints', 'GET /api/worlds/:code/checkpoints', 'GET .../checkpoints/:cid', 'POST .../checkpoints/:cid/rollback', 'POST /api/worlds/:code/fork', 'POST /api/worlds/:code/archive', 'POST /api/worlds/:code/restore'],
+    oidc: ['GET /.well-known/openid-configuration', 'GET /oidc/jwks', 'GET/POST /oidc/login', 'POST /oidc/token', 'GET /oidc/userinfo'],
+    misc: ['GET /api/notifications'],
     socket: ['room:create', 'room:join', 'room:lock(host)', 'presence:update', 'player:move(alias)',
       'world:update', 'voice:start/stop/data', 'voice:offer/answer/ice (WebRTC signaling)',
       'peer:join/leave/presence', 'player:join/leave (alias)', 'room:host', 'room:state']
   });
 });
+
+// =============================================================
+// Sprint 1 — MOCK OIDC IdP LOKAL (dev). Produksi: set SSO_ISSUER
+// ke SIAKAD asli + verifikasi RS256 via JWKS-nya. Interface di
+// sini sudah OIDC-shape (discovery/jwks/code/token/userinfo)
+// sehingga pindah IdP = ganti base URL saja.
+// =============================================================
+const MOCK_OIDC = process.env.MOCK_OIDC !== 'false';
+let oidcKeys = null;
+const oidcCodes = new Map(); // code -> {user, exp}
+function oidcKeypair() {
+  if (!oidcKeys) {
+    try { oidcKeys = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'oidc-keys.json'), 'utf8')); } catch (e) {}
+    if (!oidcKeys || !oidcKeys.publicKey) {
+      const kp = crypto.generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+      });
+      oidcKeys = { publicKey: kp.publicKey, privateKey: kp.privateKey, kid: 'dev1' };
+      try { fs.writeFileSync(path.join(DATA_DIR, 'oidc-keys.json'), JSON.stringify(oidcKeys), { mode: 0o600 }); } catch (e) {}
+    }
+  }
+  return oidcKeys;
+}
+function oidcSign(payload) {
+  const k = oidcKeypair();
+  const h = b64u({ alg: 'RS256', typ: 'JWT', kid: k.kid });
+  const b = b64u(payload);
+  const s = crypto.createSign('RSA-SHA256').update(h + '.' + b).end().sign(k.privateKey, 'base64url');
+  return h + '.' + b + '.' + s;
+}
+function oidcVerify(token) {
+  try {
+    const p = String(token || '').split('.');
+    if (p.length !== 3) return null;
+    const k = oidcKeypair();
+    const ok = crypto.createVerify('RSA-SHA256').update(p[0] + '.' + p[1]).end()
+      .verify(k.publicKey, Buffer.from(p[2], 'base64url'));
+    if (!ok) return null;
+    const payload = JSON.parse(Buffer.from(p[1], 'base64url').toString('utf8'));
+    if (payload.exp * 1000 < Date.now()) return null;
+    return payload;
+  } catch (e) { return null; }
+}
+if (MOCK_OIDC) {
+  app.get('/.well-known/openid-configuration', (req, res) => {
+    const base = req.protocol + '://' + req.get('host');
+    res.json({
+      issuer: base + '/oidc', authorization_endpoint: base + '/oidc/login',
+      token_endpoint: base + '/oidc/token', userinfo_endpoint: base + '/oidc/userinfo',
+      jwks_uri: base + '/oidc/jwks', response_types_supported: ['code'],
+      id_token_signing_alg_values_supported: ['RS256']
+    });
+  });
+  app.get('/oidc/jwks', (req, res) => {
+    try {
+      const jwk = crypto.createPublicKey(oidcKeypair().publicKey).export({ format: 'jwk' });
+      jwk.kid = 'dev1'; jwk.use = 'sig'; jwk.alg = 'RS256';
+      res.json({ keys: [jwk] });
+    } catch (e) { res.status(500).json({ error: 'jwks gagal' }); }
+  });
+  app.get('/oidc/login', (req, res) => {
+    const q = req.query;
+    res.send('<!DOCTYPE html><html><head><meta charset="utf8"><title>Mock SSO</title></head><body style="font-family:sans-serif;max-width:420px;margin:40px auto">' +
+      '<h2>Mock SSO SIAKAD (dev)</h2><form method="POST" action="/oidc/login">' +
+      '<input type="hidden" name="redirect_uri" value="' + String(q.redirect_uri || '').slice(0, 300) + '">' +
+      '<input type="hidden" name="state" value="' + String(q.state || '').slice(0, 100) + '">' +
+      '<p>Nama <input name="name" value="Guru Demo"></p>' +
+      '<p>Role <select name="role"><option value="guru">guru</option><option value="siswa">siswa</option></select></p>' +
+      '<p>Kelas <input name="classId" value="8A-IPA-2026"></p>' +
+      '<button type="submit">Login</button></form></body></html>');
+  });
+  app.post('/oidc/login', (req, res) => {
+    const b = req.body || {};
+    const user = {
+      userId: 'SIAKAD-' + Date.now().toString(36).toUpperCase(),
+      name: sanitizeName(b.name || 'Demo'), role: b.role === 'siswa' ? 'siswa' : 'guru',
+      classId: String(b.classId || '8A-IPA-2026').slice(0, 24)
+    };
+    const code = 'OIDC-' + crypto.randomBytes(12).toString('hex');
+    oidcCodes.set(code, { user: user, exp: Date.now() + 10 * 60 * 1000 });
+    const sep = String(b.redirect_uri || '/').includes('?') ? '&' : '?';
+    res.redirect(String(b.redirect_uri || '/') + sep + 'code=' + code + (b.state ? '&state=' + encodeURIComponent(b.state) : ''));
+  });
+  app.post('/oidc/token', (req, res) => {
+    const b = req.body || {};
+    const rec = oidcCodes.get(b.code);
+    if (!rec || rec.exp < Date.now()) return res.status(400).json({ error: 'code tidak valid' });
+    oidcCodes.delete(b.code);
+    const now = Math.floor(Date.now() / 1000);
+    const claims = Object.assign({ iss: req.protocol + '://' + req.get('host') + '/oidc', iat: now, exp: now + 3600 }, rec.user);
+    res.json({ access_token: oidcSign(claims), id_token: oidcSign(claims), token_type: 'Bearer', expires_in: 3600 });
+  });
+  app.get('/oidc/userinfo', (req, res) => {
+    const u = oidcVerify(readBearer(req));
+    if (!u) return res.status(401).json({ error: 'token tidak valid' });
+    res.json(u);
+  });
+}
 
 // =============================================================
 // SOCKET HANDLERS
@@ -901,6 +1228,11 @@ io.on('connection', (socket) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
     if (!Array.isArray(data.items)) return;
+    // Sprint 2: dunia read-only/archived menolak edit
+    if (room.status === 'read-only' || room.status === 'archived') {
+      socket.emit('world:denied', { reason: room.status, code: room.code });
+      return;
+    }
     room.items = data.items;
     room.itemsUpdatedAt = Date.now();
     room.itemsUpdatedBy = socket.id;
@@ -974,10 +1306,10 @@ io.on('connection', (socket) => {
 
     if (room.peers.size === 0) {
       // PRD v5.2 FR-43: dunia TETAP ADA saat 0 peserta (idle), tidak dihapus.
-      // Room acak kedaluwarsa via sweep 30 hari; room kelas dipertahankan.
-      room.status = 'idle';
+      // read-only/archived TIDAK diturunkan ke idle oleh disconnect.
+      if (!room.status || room.status === 'active') room.status = 'idle';
       schedulePersist();
-      console.log('[ROOM~]', room.code, '(idle, persisted)');
+      console.log('[ROOM~]', room.code, '(' + (room.status || 'idle') + ', persisted)');
     } else if (wasHost) {
       const [nextSid, nextP] = room.peers.entries().next().value;
       nextP.isHost = true;

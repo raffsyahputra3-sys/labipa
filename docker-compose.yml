@@ -1,0 +1,30 @@
+# LabIPA infra pendamping (Sprint 3–4, opsional di server sendiri)
+#   docker compose up -d
+# TURN (coturn) untuk WebRTC di NAT ketat + Mailhog untuk dev mailer.
+services:
+  coturn:
+    image: coturn/coturn:latest
+    command:
+      - --realm=labipa
+      - --user=labipa:${TURN_PASS:-ganti-dengan-rahasia}
+      - --min-port=49160
+      - --max-port=49200
+      - --log-file=stdout
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"
+    environment:
+      - TURN_PASS=${TURN_PASS:-ganti-dengan-rahasia}
+    restart: unless-stopped
+  # Isi ke server LabIPA via env:
+  #   TURN_URLS=turn:IP-SERVER:3478
+  #   TURN_USER=labipa
+  #   TURN_PASS=(sama)
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"   # SMTP (dev: abaikan, server pakai outbox file)
+      - "8025:8025"   # UI: http://localhost:8025
+    restart: unless-stopped
