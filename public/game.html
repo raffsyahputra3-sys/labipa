@@ -877,6 +877,26 @@ canvas{display:block}
 #liveBadge.on{display:inline-block;animation:micPulse .8s ease-in-out infinite alternate}
 #voiceQ{display:inline-block;width:8px;height:8px;border-radius:50%;background:#8A939B;margin-left:4px;vertical-align:baseline}
 #voiceQ.g{background:#2E7D32}#voiceQ.y{background:#D97706}#voiceQ.r{background:#B91C1C}
+.mp-resume{margin-top:10px;border-top:1px dashed var(--rule-soft);padding-top:8px}
+.mp-resume-h{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--rule);margin-bottom:6px}
+#mpResumeList{display:flex;flex-direction:column;gap:6px;max-height:150px;overflow-y:auto}
+.mp-world{text-align:left;border:1px solid var(--rule-soft);background:transparent;border-radius:4px;padding:6px 8px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--ink)}
+.mp-world:hover{border-color:var(--safety)}
+.mp-world .w-code{font-weight:700}
+.mp-world .w-meta{display:block;font-size:10px;color:var(--rule)}
+#gateOverlay{position:fixed;inset:0;z-index:9999;background:#1B2A41;display:flex;align-items:center;justify-content:center}
+.gate-card{width:min(360px,90vw);background:#EDE7D3;border:1px solid #8B7355;border-radius:8px;padding:28px 26px;text-align:center;color:#1B2A41}
+.gate-logo{font-family:EB Garamond,serif;font-size:24px;margin-bottom:4px}
+.gate-logo span{font-size:14px;color:#8B7355}
+.gate-title{font-family:IBM Plex Mono,monospace;font-size:12px;letter-spacing:.2em;margin:14px 0 10px}
+#gateKey{width:100%;box-sizing:border-box;font-family:IBM Plex Mono,monospace;font-size:20px;letter-spacing:.3em;text-align:center;text-transform:uppercase;padding:10px;border:2px solid #1B2A41;border-radius:4px;background:#F5F0E0;color:#1B2A41}
+#gateOpen{margin-top:12px;width:100%;padding:10px;background:#1B2A41;color:#F5F0E0;border:none;border-radius:4px;font-family:IBM Plex Mono,monospace;font-size:14px;cursor:pointer}
+#gateOpen:hover{background:#D97706}
+#gateOpen:disabled{opacity:.5;cursor:wait}
+.gate-status{font-family:IBM Plex Mono,monospace;font-size:11px;color:#8B1E1E;min-height:16px;margin-top:8px}
+.gate-note{font-size:11px;color:#8B7355;margin-top:10px;line-height:1.6}
+#gateBanner{display:none;position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:9000;background:#B91C1C;color:#fff;font-family:IBM Plex Mono,monospace;font-size:11px;padding:8px 16px;border-radius:4px}
+#gateBanner.on{display:block}
 .mp-player .crown[title="mic aktif"]{
   color:#2E7C4A;
   font-size:12px;
@@ -1314,15 +1334,32 @@ div[data-mppanel="solo"] .cover-cta{
       </div>
       <div class="mp-field">
         <label for="mpJoinCode">Kode room dari host</label>
-        <input type="text" id="mpJoinCode" maxlength="6" placeholder="mis. 7K2QDX">
+        <input type="text" id="mpJoinCode" maxlength="24" placeholder="mis. 7K2QDX / 8A-IPA-2026">
       </div>
       <div class="mp-status" id="mpJoinStatus"></div>
       <button class="cover-cta" id="btnMpJoin" type="button">Gabung & Mulai</button>
+      <div class="mp-resume" id="mpResume" style="display:none">
+        <div class="mp-resume-h">LANJUTKAN DUNIA</div>
+        <div id="mpResumeList"></div>
+      </div>
     </div>
 
     <div class="mp-avail" id="mpAvail">Menghubungkan layanan multiplayer…</div>
   </div>
 </div>
+
+<!-- PRD v4.0 FR-18/21: Gerbang kunci master (sebelum app) + kunci idle -->
+<div id="gateOverlay" style="display:none">
+  <div class="gate-card">
+    <div class="gate-logo">🔬 LabIPA <span>3D Studio</span></div>
+    <div class="gate-title" id="gateTitle">KUNCI AKSES</div>
+    <input type="password" id="gateKey" maxlength="32" autocomplete="off" placeholder="••••••••" aria-label="Kunci akses">
+    <button id="gateOpen" type="button">Buka →</button>
+    <div class="gate-status" id="gateStatus"></div>
+    <div class="gate-note">Hanya pemegang kunci yang diizinkan masuk.<br><span id="gateAttempts"></span></div>
+  </div>
+</div>
+<div id="gateBanner">🔒 Sesi terkunci, autosave dijeda.</div>
 
 <div id="topbar">
   <div class="brand">
@@ -3207,7 +3244,6 @@ function placeProp(group,file,fit,x,y,z,ry){
     const key='prop|'+file;
     const done=function(srcScene){
       try{
-        if(typeof PLACEMENT!=='undefined'&&PLACEMENT.ghost===group)return;
         const holder=new THREE.Group();
         holder.add(srcScene.clone(true));
         applyColorToAsset(holder,null,file);
@@ -3222,6 +3258,10 @@ function placeProp(group,file,fit,x,y,z,ry){
         holder.rotation.y=ry||0;
         holder.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
         group.add(holder);
+        // Extras di dalam ghost ikut diberi gaya preview (warna utuh + garis tepi)
+        try{
+          if(typeof PLACEMENT!=='undefined'&&PLACEMENT.ghost===group&&typeof applyGhostStyle==='function')applyGhostStyle(holder);
+        }catch(e){}
       }catch(e){}
     };
     if(GLB_CACHE[key]){done(GLB_CACHE[key]);return;}
@@ -3245,12 +3285,14 @@ function addComputerSet(group,fit){
 }
 function finishGLBUpgrade(group,itemKey,man,def,fit,srcScene){
   try{
-    // Ghost placement tetap primitif + garis tepi (jangan diganggu).
-    if(typeof PLACEMENT!=='undefined'&&PLACEMENT.ghost===group)return;
+    const isGhost=(typeof PLACEMENT!=='undefined'&&PLACEMENT.ghost===group);
+    // Ghost ikut upgrade agar preview == hasil akhir (warna + bentuk + extras),
+    // lalu diberi gaya ghost (transparan + garis tepi).
     const model=srcScene.clone(true);
     applyColorToAsset(model,null,man.file);
     if(!glbFitInto(group,model,fit))return;
     if(man.extras&&man.extras.indexOf('computer')>=0)addComputerSet(group,fit);
+    if(isGhost&&typeof applyGhostStyle==='function')applyGhostStyle(group);
   }catch(e){}
 }
 function upgradeWithGLB(group,itemKey){
@@ -3733,6 +3775,32 @@ function setSnap(mode){
     b.classList.toggle('on',b.dataset.snap===mode);
   });
 }
+// Ghost preview WAJIB sama persis dengan model final (warna + bentuk).
+// Helper ini dipakai saat ghost dibuat MAUPUN saat GLB async tiba belakangan.
+function ghostTintMaterial(m){
+  if(!m)return;
+  try{
+    m.transparent=true;m.opacity=0.92; // preview: warna utuh, sedikit transparan
+    if(m.emissive){m.emissive=new THREE.Color(0xD97706);m.emissiveIntensity=0.12;}
+  }catch(e){}
+}
+function styleGhostMesh(o){
+  if(!o.isMesh||!o.geometry||o.userData.ghostStyled)return;
+  o.userData.ghostStyled=true;
+  const edges=new THREE.EdgesGeometry(o.geometry,15);
+  const lm=new THREE.LineBasicMaterial({color:0xD97706,linewidth:2});
+  const line=new THREE.LineSegments(edges,lm);line.renderOrder=999;
+  o.add(line);
+  try{o.material=o.material.clone();}catch(e){}
+  if(Array.isArray(o.material)){o.material.forEach(ghostTintMaterial);}else{ghostTintMaterial(o.material);}
+  o.castShadow=false;
+  PLACEMENT.ghostLines.push(lm);
+  if(Array.isArray(o.material)){o.material.forEach(function(mm){PLACEMENT.ghostMats.push(mm);});}
+  else{PLACEMENT.ghostMats.push(o.material);}
+}
+function applyGhostStyle(root){
+  try{root.traverse(styleGhostMesh);}catch(e){}
+}
 function setGhostColor(hex){
   for(let i=0;i<PLACEMENT.ghostLines.length;i++)PLACEMENT.ghostLines[i].color.setHex(hex);
   for(let i=0;i<PLACEMENT.ghostMats.length;i++){
@@ -3751,20 +3819,7 @@ function startPlacement(itemKey){
   PLACEMENT.snap=(mt==='wall')?'wall':'floor';
   updateSnapBar(mt);
   const ghost=def.make();
-  ghost.traverse(function(o){
-    if(o.isMesh&&o.geometry){
-      const edges=new THREE.EdgesGeometry(o.geometry,15);
-      const lm=new THREE.LineBasicMaterial({color:0xD97706,linewidth:2});
-      const line=new THREE.LineSegments(edges,lm);line.renderOrder=999;
-      o.add(line);o.material=o.material.clone();
-      if(o.material.emissive){
-        o.material.emissive=new THREE.Color(0xD97706);
-        o.material.emissiveIntensity=0.12;
-      }
-      o.castShadow=false;
-      PLACEMENT.ghostLines.push(lm);PLACEMENT.ghostMats.push(o.material);
-    }
-  });
+  applyGhostStyle(ghost); // warna + bentuk final, tinggal garis tepi status
   PLACEMENT.ghost=ghost;scene.add(ghost);
   document.getElementById('placeBar').classList.add('on');
   document.getElementById('pbName').textContent=def.label;
@@ -4358,6 +4413,14 @@ document.getElementById('mpLockBtn').addEventListener('click',function(){
     // Autosave debounced tiap 30 dtk bila ada perubahan (diam, tanpa toast)
     setInterval(function(){
       try{
+        // PRD v4.0 FR-22: pause saat gate terkunci
+        if(window.LabIPA&&window.LabIPA.Gate&&window.LabIPA.Gate.isLocked()){
+          const b=document.getElementById('gateBanner');
+          if(b&&PHYS.bodies&&PHYS.bodies.length)b.classList.add('on');
+          return;
+        }
+        const b=document.getElementById('gateBanner');
+        if(b)b.classList.remove('on');
         if(typeof mpComputeFingerprint!=='function'||typeof PHYS==='undefined')return;
         if(!PHYS.bodies||!PHYS.bodies.length)return;
         const fp=mpComputeFingerprint();
@@ -4388,7 +4451,83 @@ document.getElementById('mpLockBtn').addEventListener('click',function(){
       const jc=document.getElementById('mpJoinCode');if(jc&&!jc.value)jc.value=cls;
     }
   }catch(e){}
+  // PRD v5.2 FR-42/46: daftar dunia resumable di tab Gabung (klik = isi kode)
+  try{
+    fetch('/api/worlds/resumable').then(function(r){return r.json();}).then(function(j){
+      const items=(j&&j.items)||[];
+      if(!items.length)return;
+      const box=document.getElementById('mpResume');
+      const list=document.getElementById('mpResumeList');
+      if(!box||!list)return;
+      box.style.display='block';
+      list.innerHTML='';
+      items.slice(0,8).forEach(function(w){
+        const b=document.createElement('button');
+        b.type='button';b.className='mp-world';
+        let ago='';
+        try{
+          if(w.lastActivityAt){
+            const h=Math.round((Date.now()-Date.parse(w.lastActivityAt))/3600000);
+            ago=h<1?'baru saja':(h<24?(h+' jam lalu'):(Math.round(h/24)+' hari lalu'));
+          }
+        }catch(e){}
+        b.innerHTML='<span class="w-code">'+String(w.code).replace(/</g,'&lt;')+'</span> · '+(w.itemCount||0)+' item'+
+          '<span class="w-meta">Terakhir: '+ago+(w.lastActivityBy?(' ('+String(w.lastActivityBy).replace(/</g,'&lt;')+')'):'')+(w.online?(' · 🟢 '+w.online+' online'):'')+'</span>';
+        b.addEventListener('click',function(){
+          const jc=document.getElementById('mpJoinCode');
+          if(jc)jc.value=w.code;
+          document.querySelectorAll('.mp-tab').forEach(function(t){t.classList.toggle('on',t.dataset.mptab==='join');});
+          document.querySelectorAll('.mp-panel').forEach(function(p){p.classList.toggle('on',p.dataset.mppanel==='join');});
+          try{showToast('Kode diisi: '+w.code+' — klik Gabung & Mulai');}catch(e){}
+        });
+        list.appendChild(b);
+      });
+    }).catch(function(){});
+  }catch(e){}
+  // PRD v4.0 FR-18/21: boot gate — overlay sebelum app bila server mewajibkan
+  try{
+    if(window.LabIPA&&window.LabIPA.Gate)labipaGateBoot();
+  }catch(e){}
 })();
+// PRD v4.0: logika overlay gate (unlock awal + kunci ulang saat idle)
+function labipaGateBoot(){
+  const ov=document.getElementById('gateOverlay');
+  const keyEl=document.getElementById('gateKey');
+  const st=document.getElementById('gateStatus');
+  const att=document.getElementById('gateAttempts');
+  const btn=document.getElementById('gateOpen');
+  if(!ov||!keyEl||!btn)return;
+  const show=function(lockMode){
+    ov.style.display='flex';
+    try{document.getElementById('gateTitle').textContent=lockMode?'SESI TERKUNCI':'KUNCI AKSES';}catch(e){}
+    try{keyEl.value='';st.textContent='';setTimeout(function(){keyEl.focus();},50);}catch(e){}
+  };
+  const hide=function(){ov.style.display='none';};
+  const doUnlock=function(){
+    const k=keyEl.value||'';
+    if(!k){st.textContent='Masukkan kunci dulu.';return;}
+    btn.disabled=true;st.textContent='Memeriksa…';
+    window.LabIPA.Gate.unlock(k).then(function(){
+      btn.disabled=false;hide();
+      try{window.LabIPA.Storage.flushQueue().catch(function(){});}catch(e){}
+      try{showToast('🔓 Terbuka — selamat bekerja');}catch(e){}
+    }).catch(function(e){
+      btn.disabled=false;
+      if(e&&e.status===403){st.textContent='Diblokir sementara. '+(e.until?('Coba lagi setelah '+e.until):'');}
+      else{st.textContent='Kunci salah.'+(e&&e.attemptsLeft!=null?(' Sisa: '+e.attemptsLeft+' percobaan.'):'');}
+      try{att.textContent='Percobaan tercatat di audit log.';}catch(_){}
+    });
+  };
+  btn.addEventListener('click',doUnlock);
+  keyEl.addEventListener('keydown',function(e){if(e.key==='Enter')doUnlock();});
+  keyEl.addEventListener('input',function(){keyEl.value=keyEl.value.toUpperCase().replace(/\s+/g,'');});
+  document.addEventListener('labipa:gate-lock',function(){show(true);});
+  document.addEventListener('labipa:gate-unlock',function(){hide();});
+  // Status awal: wajib + belum unlock → tampilkan gate
+  window.LabIPA.Gate.check().then(function(ok){
+    if(window.LabIPA.Gate.required()&&!ok)show(false);
+  }).catch(function(){});
+}
 document.getElementById('mpCopyCode').addEventListener('click',function(){
   if(!MP.code)return;
   const disp=mpFormatRoom(MP.code);

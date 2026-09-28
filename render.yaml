@@ -13,4 +13,6 @@ services:
         value: true
       - key: ENABLE_LIVE_EDIT
         value: true
+      - key: GATE_REQUIRED
+        value: true
     autoDeploy: true

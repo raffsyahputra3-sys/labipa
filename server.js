@@ -11,10 +11,14 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const crypto = require('crypto');
+const fs = require('fs');
 const { Server } = require('socket.io');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+// IP asli di balik proxy (Render) untuk rate limit & audit
+app.set('trust proxy', true);
 const server = http.createServer(app);
 
 // ---------- Feature flags (PRD v2 §7.4) ----------
@@ -24,6 +28,45 @@ const FLAGS = {
   SSO_ISSUER: process.env.SSO_ISSUER || '',
   SSO_CLIENT_ID: process.env.SSO_CLIENT_ID || 'labipa-3d-studio'
 };
+
+// =============================================================
+// PERSISTENCE (PRD v5.2 — dunia tetap utuh antar sesi & restart)
+// File JSON di DATA_DIR; peer/transient tidak ikut disimpan.
+// =============================================================
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+function dataRead(file, fb) {
+  try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf8')); }
+  catch (e) { return fb; }
+}
+function dataWrite(file, obj, mode) {
+  try {
+    fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(obj), { mode: mode || 0o644 });
+    return true;
+  } catch (e) { return false; }
+}
+let persistTimer = null;
+function schedulePersist() {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => { persistTimer = null; persistAll(); }, 2000);
+}
+function persistAll() {
+  try {
+    const roomsObj = {};
+    for (const [code, r] of rooms) {
+      roomsObj[code] = {
+        code: r.code, isClass: !!r.isClass, locked: !!r.locked,
+        maxPlayers: r.maxPlayers, hostUid: r.hostUid,
+        items: r.items, itemsUpdatedAt: r.itemsUpdatedAt, itemsUpdatedBy: r.itemsUpdatedBy,
+        createdAt: r.createdAt, status: r.peers && r.peers.size ? 'active' : (r.status || 'idle'),
+        lastActivityAt: r.lastActivityAt, lastActivityBy: r.lastActivityBy,
+        itemCount: Array.isArray(r.items) ? r.items.length : 0
+      };
+    }
+    dataWrite('rooms.json', { v: 1, rooms: roomsObj });
+    dataWrite('layouts.json', { v: 1, items: [...layouts.values()] });
+  } catch (e) {}
+}
 
 // CORS: izinkan semua origin (aman untuk kelas, ganti kalau perlu)
 const io = new Server(server, {
@@ -46,6 +89,224 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Health check untuk cron-job.org
 app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
+
+// =============================================================
+// PRD v4.0 — SINGLE-KEY ACCESS CONTROL (Master Key Gate)
+// Satu kunci master (hash scrypt + compare timing-safe, tanpa
+// plaintext di bundle), rate limit 5/15 mnt/IP, audit append-only,
+// rotasi tanpa restart (file watch / endpoint / CLI), JWT 12 jam.
+// Deviasi dari PRD: bcrypt/jsonwebtoken diganti crypto bawaan
+// Node (tanpa dep native) dengan properti setara.
+// =============================================================
+const GATE_REQUIRED = process.env.GATE_REQUIRED !== 'false'; // default: gate aktif
+const GATE_FILE = process.env.MASTER_KEY_FILE || path.join(DATA_DIR, 'masterkey.json');
+const GATE_AUDIT_FILE = path.join(DATA_DIR, 'gate-audit.jsonl');
+const GATE_GRACE_MS = 60 * 1000;
+const GATE_MAX_ATTEMPTS = parseInt(process.env.GATE_MAX_ATTEMPTS || '5', 10);
+const GATE_BLOCK_MS = 15 * 60 * 1000;
+const GATE_TOKEN_EXP = 12 * 3600; // 12 jam
+const GATE_WHITELIST = String(process.env.GATE_IP_WHITELIST || '127.0.0.1,::1').split(',').map(s => s.trim());
+
+let gateHash = null, prevGateHash = null, rotatedAt = 0;
+const gateFails = new Map();   // ip -> { fails:[ts], blockedUntil:ts }
+const revokedGateTokens = new Set();
+
+function gateScrypt(key, salt) {
+  return crypto.scryptSync(String(key), salt, 64).toString('hex');
+}
+function gateMakeHash(key) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return 'scrypt$' + salt + '$' + gateScrypt(key, salt);
+}
+function gateVerify(key, stored) {
+  try {
+    const p = String(stored || '').split('$');
+    if (p[0] !== 'scrypt' || !p[1] || !p[2]) return false;
+    const a = Buffer.from(gateScrypt(key, p[1]), 'hex');
+    const b = Buffer.from(p[2], 'hex');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch (e) { return false; }
+}
+function gateRandomKey(len) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < (len || 16); i++) s += chars[crypto.randomInt(chars.length)];
+  return s;
+}
+function gateLoadFile() {
+  try {
+    const raw = fs.readFileSync(GATE_FILE, 'utf8');
+    const j = JSON.parse(raw);
+    if (j && j.hash && j.hash !== gateHash) {
+      prevGateHash = gateHash; gateHash = j.hash; rotatedAt = Date.now();
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+function gateSaveFile(hash) {
+  try {
+    fs.writeFileSync(GATE_FILE, JSON.stringify({ hash: hash, createdAt: new Date().toISOString() }), { mode: 0o600 });
+    return true;
+  } catch (e) { return false; }
+}
+(function gateInit() {
+  if (!gateLoadFile()) {
+    if (process.env.MASTER_KEY) {
+      gateHash = gateMakeHash(process.env.MASTER_KEY.trim());
+      gateSaveFile(gateHash);
+      console.log('[GATE] kunci dari env MASTER_KEY tersimpan (hash).');
+    } else {
+      const k = gateRandomKey(16);
+      gateHash = gateMakeHash(k);
+      gateSaveFile(gateHash);
+      console.log('');
+      console.log('  ╔══════════════════════════════════════════════════╗');
+      console.log('  ║  GATE: kunci master dibuat otomatis (sekali)     ║');
+      console.log('  ║  >>> ' + k + ' <<<                          ║');
+      console.log('  ║  Simpan & rotasi via: npm run rotate-key         ║');
+      console.log('  ╚══════════════════════════════════════════════════╝');
+      console.log('');
+    }
+  }
+  // Rotasi tanpa restart: CLI/endpoint tulis file → watch refresh ≤5 dtk
+  try {
+    let wt = null;
+    fs.watch(path.dirname(GATE_FILE), { persistent: false }, (ev, name) => {
+      if (name && GATE_FILE.endsWith(name)) {
+        if (wt) clearTimeout(wt);
+        wt = setTimeout(() => { if (gateLoadFile()) console.log('[GATE] kunci dirotasi via file (tanpa restart).'); }, 500);
+      }
+    });
+  } catch (e) {}
+})();
+// Secret JWT gate (persist agar token survive restart)
+let gateSecret = process.env.GATE_JWT_SECRET || '';
+if (!gateSecret) {
+  try { gateSecret = fs.readFileSync(path.join(DATA_DIR, 'gate-secret'), 'utf8').trim(); } catch (e) {}
+  if (!gateSecret) {
+    gateSecret = crypto.randomBytes(32).toString('hex');
+    try { fs.writeFileSync(path.join(DATA_DIR, 'gate-secret'), gateSecret, { mode: 0o600 }); } catch (e) {}
+  }
+}
+function b64u(o) { return Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString('base64url'); }
+function gateSign(ip) {
+  const now = Math.floor(Date.now() / 1000);
+  const body = b64u({ alg: 'HS256', typ: 'JWT' }) + '.' + b64u({ gate: true, ip: ip, iat: now, exp: now + GATE_TOKEN_EXP });
+  return body + '.' + crypto.createHmac('sha256', gateSecret).update(body).digest('base64url');
+}
+function gateCheck(token) {
+  try {
+    if (!token || revokedGateTokens.has(token)) return null;
+    const p = String(token).split('.');
+    if (p.length !== 3) return null;
+    const sig = crypto.createHmac('sha256', gateSecret).update(p[0] + '.' + p[1]).digest('base64url');
+    const a = Buffer.from(sig), b = Buffer.from(p[2]);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const payload = JSON.parse(Buffer.from(p[1], 'base64url').toString('utf8'));
+    if (!payload.gate || payload.exp * 1000 < Date.now()) return null;
+    return payload;
+  } catch (e) { return null; }
+}
+function gateIp(req) {
+  const f = req.headers['x-forwarded-for'];
+  if (f) return String(f).split(',')[0].trim();
+  return (req.ip || (req.socket && req.socket.remoteAddress) || 'unknown').toString().slice(0, 64);
+}
+function gateAudit(ev) {
+  try {
+    ev.id = 'log-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    ev.timestamp = new Date().toISOString();
+    fs.appendFileSync(GATE_AUDIT_FILE, JSON.stringify(ev) + '\n');
+  } catch (e) {}
+}
+function gateRecentFails(ip, windowMs) {
+  const rec = gateFails.get(ip);
+  if (!rec) return 0;
+  const cut = Date.now() - windowMs;
+  rec.fails = rec.fails.filter(t => t > cut);
+  return rec.fails.length;
+}
+function gateRecordFail(ip) {
+  let rec = gateFails.get(ip);
+  if (!rec) { rec = { fails: [], blockedUntil: 0 }; gateFails.set(ip, rec); }
+  rec.fails.push(Date.now());
+  const f15 = gateRecentFails(ip, 15 * 60 * 1000);
+  const f60 = gateRecentFails(ip, 3600 * 1000);
+  if (f60 >= 20) { rec.blockedUntil = Date.now() + 24 * 3600 * 1000; return { blocked: true, ms: 24 * 3600 * 1000 }; }
+  if (f15 >= GATE_MAX_ATTEMPTS) { rec.blockedUntil = Date.now() + GATE_BLOCK_MS; return { blocked: true, ms: GATE_BLOCK_MS }; }
+  return { blocked: false, fails: f15 };
+}
+
+app.get('/api/gate/status', (req, res) => {
+  const t = readBearer(req);
+  res.json({ ok: true, required: GATE_REQUIRED, unlocked: !!gateCheck(t) });
+});
+app.post('/api/gate/unlock', (req, res) => {
+  const ip = gateIp(req);
+  const ua = String(req.headers['user-agent'] || '').slice(0, 200);
+  const rawKey = String((req.body && req.body.key) || '').toUpperCase().replace(/\s+/g, '');
+  const rec = gateFails.get(ip);
+  if (rec && rec.blockedUntil > Date.now()) {
+    gateAudit({ event: 'gate_unlock_attempt', success: false, ip: ip, userAgent: ua, keyLength: rawKey.length, keyPrefix: rawKey.slice(0, 2), reason: 'blocked', attemptNumber: gateRecentFails(ip, 15 * 60 * 1000) });
+    return res.status(403).json({ ok: false, error: 'IP diblokir sementara.', until: new Date(rec.blockedUntil).toISOString() });
+  }
+  if (rawKey.length < 6 || rawKey.length > 32) {
+    gateAudit({ event: 'gate_unlock_attempt', success: false, ip: ip, userAgent: ua, keyLength: rawKey.length, keyPrefix: rawKey.slice(0, 2), reason: 'invalid_format', attemptNumber: gateRecentFails(ip, 15 * 60 * 1000) });
+    return res.status(401).json({ ok: false, error: 'Format kunci salah (6–32 karakter).' });
+  }
+  const valid = gateVerify(rawKey, gateHash);
+  const inGrace = prevGateHash && (Date.now() - rotatedAt) < GATE_GRACE_MS && gateVerify(rawKey, prevGateHash);
+  if (!valid && !inGrace) {
+    const r = gateRecordFail(ip);
+    gateAudit({ event: 'gate_unlock_attempt', success: false, ip: ip, userAgent: ua, keyLength: rawKey.length, keyPrefix: rawKey.slice(0, 2), reason: 'invalid_key', attemptNumber: gateRecentFails(ip, 15 * 60 * 1000) });
+    if (r.blocked) return res.status(403).json({ ok: false, error: 'Terlalu banyak percobaan. IP diblokir.', attemptNumber: r.fails });
+    return res.status(401).json({ ok: false, error: 'Kunci salah.', attemptsLeft: Math.max(0, GATE_MAX_ATTEMPTS - (r.fails || 0)) });
+  }
+  gateFails.delete(ip);
+  gateAudit({ event: 'gate_unlock_attempt', success: true, ip: ip, userAgent: ua, keyLength: rawKey.length, keyPrefix: rawKey.slice(0, 2), reason: 'ok', attemptNumber: 0 });
+  res.json({ ok: true, token: gateSign(ip), expiresIn: GATE_TOKEN_EXP });
+});
+// Rotasi: kunci lama + IP whitelist (default localhost)
+app.post('/api/gate/rotate', (req, res) => {
+  const ip = gateIp(req);
+  const ua = String(req.headers['user-agent'] || '').slice(0, 200);
+  const host = (req.socket && (req.socket.remoteAddress || '')) + '';
+  const allowed = GATE_WHITELIST.some(w => ip === w || host.includes(w) || ip === '::ffff:' + w);
+  if (!allowed) {
+    gateAudit({ event: 'gate_rotate', success: false, ip: ip, userAgent: ua, reason: 'not_whitelisted' });
+    return res.status(403).json({ ok: false, error: 'Rotasi hanya dari IP whitelist.' });
+  }
+  const oldKey = String((req.body && req.body.oldKey) || '').toUpperCase().replace(/\s+/g, '');
+  const newKey = String((req.body && req.body.newKey) || '').toUpperCase().replace(/\s+/g, '');
+  if (!gateVerify(oldKey, gateHash)) {
+    gateAudit({ event: 'gate_rotate', success: false, ip: ip, userAgent: ua, reason: 'bad_old_key' });
+    return res.status(401).json({ ok: false, error: 'Kunci lama salah.' });
+  }
+  if (newKey.length < 6 || newKey.length > 32) {
+    return res.status(400).json({ ok: false, error: 'Kunci baru harus 6–32 karakter.' });
+  }
+  prevGateHash = gateHash; rotatedAt = Date.now();
+  gateHash = gateMakeHash(newKey);
+  gateSaveFile(gateHash);
+  gateAudit({ event: 'gate_rotate', success: true, ip: ip, userAgent: ua, keyLength: newKey.length, keyPrefix: newKey.slice(0, 2), reason: 'ok' });
+  res.json({ ok: true, graceSeconds: Math.round(GATE_GRACE_MS / 1000) });
+});
+app.get('/api/gate/audit', (req, res) => {
+  if (!gateCheck(readBearer(req))) return res.status(401).json({ ok: false, error: 'Gate token tidak valid.' });
+  const limit = Math.max(1, Math.min(500, parseInt(req.query.limit, 10) || 100));
+  let lines = [];
+  try { lines = fs.readFileSync(GATE_AUDIT_FILE, 'utf8').split('\n').filter(Boolean); } catch (e) {}
+  const items = lines.slice(-limit).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
+  res.json({ ok: true, count: items.length, items: items });
+});
+app.post('/api/gate/lock', (req, res) => {
+  const t = readBearer(req);
+  if (!gateCheck(t)) return res.status(401).json({ ok: false, error: 'Gate token tidak valid.' });
+  revokedGateTokens.add(t);
+  gateAudit({ event: 'gate_lock', success: true, ip: gateIp(req), reason: 'manual' });
+  res.json({ ok: true });
+});
 
 // =============================================================
 // ROOM STATE (in-memory)
@@ -149,6 +410,10 @@ function joinRoom(socket, room, name, isHost, avatar) {
     x: 1, y: 1.6, z: 6, rotY: 0
   };
   room.peers.set(socket.id, presence);
+  room.status = 'active';
+  room.lastActivityAt = new Date().toISOString();
+  room.lastActivityBy = presence.username;
+  schedulePersist();
 
   socket.emit('room:state', {
     code: room.code,
@@ -265,6 +530,49 @@ app.get('/api/auth/me', (req, res) => {
 // publish + soft delete). Store in-memory; cukup untuk sprint.
 // =============================================================
 const layouts = new Map();
+// PRD v5.2: restore dunia + layout dari disk saat boot (survive restart)
+(function restorePersisted() {
+  try {
+    const r = dataRead('rooms.json', null);
+    if (r && r.rooms) {
+      for (const code of Object.keys(r.rooms)) {
+        const s = r.rooms[code];
+        if (!s || !s.code) continue;
+        rooms.set(code, {
+          code: s.code, isClass: !!s.isClass, locked: !!s.locked,
+          maxPlayers: s.maxPlayers || 6, hostUid: s.hostUid || null,
+          items: Array.isArray(s.items) ? s.items : [],
+          itemsUpdatedAt: s.itemsUpdatedAt || Date.now(),
+          itemsUpdatedBy: s.itemsUpdatedBy || null,
+          createdAt: s.createdAt || new Date().toISOString(),
+          status: 'idle', // peer transient tidak dis restore; dunia idle sampai ada yang join
+          lastActivityAt: s.lastActivityAt || null, lastActivityBy: s.lastActivityBy || null,
+          peers: new Map()
+        });
+      }
+      if (rooms.size) console.log('[WORLD] restore ' + rooms.size + ' dunia dari disk.');
+    }
+  } catch (e) {}
+  try {
+    const l = dataRead('layouts.json', null);
+    if (l && Array.isArray(l.items)) {
+      for (const it of l.items) { if (it && it.id) layouts.set(it.id, it); }
+      if (layouts.size) console.log('[WORLD] restore ' + layouts.size + ' layout dari disk.');
+    }
+  } catch (e) {}
+})();
+// Sapu dunia idle >30 hari (non-kelas). Room kelas dipertahankan.
+setInterval(() => {
+  try {
+    const cut = Date.now() - 30 * 24 * 3600 * 1000;
+    for (const [code, r] of rooms) {
+      if (r.isClass || (r.peers && r.peers.size)) continue;
+      const last = r.lastActivityAt ? Date.parse(r.lastActivityAt) : (r.itemsUpdatedAt || 0);
+      if (last && last < cut) { rooms.delete(code); console.log('[WORLD] arsip-hapus dunia idle:', code); }
+    }
+    schedulePersist();
+  } catch (e) {}
+}, 3600 * 1000);
 function uid(prefix) {
   return (prefix || 'layout') + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -322,6 +630,7 @@ app.post('/api/layouts', (req, res) => {
     items: b.items
   };
   layouts.set(l.id, l);
+  schedulePersist();
   res.status(201).json({ ok: true, item: publicLayout(l) });
 });
 
@@ -355,6 +664,7 @@ app.put('/api/layouts/:id', (req, res) => {
       });
     }
   }
+  schedulePersist();
   res.json({ ok: true, item: publicLayout(l) });
 });
 
@@ -367,6 +677,7 @@ app.delete('/api/layouts/:id', (req, res) => {
     return res.status(403).json({ ok: false, error: 'Hanya pemilik/guru yang boleh menghapus.' });
   }
   l.deletedAt = new Date().toISOString();
+  schedulePersist();
   res.json({ ok: true, restoreUntilDays: 30 });
 });
 
@@ -375,6 +686,7 @@ app.post('/api/layouts/:id/restore', (req, res) => {
   if (!l || !l.deletedAt) return res.status(404).json({ ok: false, error: 'Layout tidak ditemukan / tidak terhapus.' });
   l.deletedAt = null;
   l.updatedAt = new Date().toISOString();
+  schedulePersist();
   res.json({ ok: true, item: publicLayout(l) });
 });
 
@@ -390,6 +702,7 @@ app.post('/api/layouts/:id/clone', (req, res) => {
     deletedAt: null, items: JSON.parse(JSON.stringify(l.items))
   };
   layouts.set(c.id, c);
+  schedulePersist();
   res.status(201).json({ ok: true, item: publicLayout(c) });
 });
 
@@ -406,7 +719,38 @@ app.post('/api/layouts/:id/publish', (req, res) => {
   l.published = true;
   l.version += 1;
   l.updatedAt = new Date().toISOString();
+  schedulePersist();
   res.json({ ok: true, item: publicLayout(l) });
+});
+
+// PRD v5.2 FR-42/46 — daftar dunia + metadata (lobby "Lanjutkan")
+function worldMeta(r) {
+  return {
+    code: r.code, isClass: !!r.isClass, locked: !!r.locked,
+    maxPlayers: r.maxPlayers, online: r.peers ? r.peers.size : 0,
+    status: (r.peers && r.peers.size) ? 'active' : (r.status || 'idle'),
+    itemCount: Array.isArray(r.items) ? r.items.length : 0,
+    createdAt: r.createdAt || null,
+    lastActivityAt: r.lastActivityAt || null,
+    lastActivityBy: r.lastActivityBy || null,
+    itemsUpdatedAt: r.itemsUpdatedAt || null
+  };
+}
+app.get('/api/worlds', (req, res) => {
+  const list = [...rooms.values()].map(worldMeta);
+  list.sort((a, b) => (b.lastActivityAt || '').localeCompare(a.lastActivityAt || ''));
+  res.json({ ok: true, count: list.length, items: list });
+});
+app.get('/api/worlds/resumable', (req, res) => {
+  const list = [...rooms.values()].map(worldMeta);
+  list.sort((a, b) => (b.lastActivityAt || '').localeCompare(a.lastActivityAt || ''));
+  res.json({ ok: true, count: list.length, items: list });
+});
+app.get('/api/worlds/:code/state', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase().slice(0, 24);
+  const r = rooms.get(code);
+  if (!r) return res.status(404).json({ ok: false, error: 'Dunia tidak ditemukan.' });
+  res.json({ ok: true, meta: worldMeta(r), items: r.items || [] });
 });
 
 // PRD v2 FR-07: roster anggota kelas + layout published kelas
@@ -443,6 +787,8 @@ app.get('/api/docs', (req, res) => {
       'POST /api/layouts/:id/clone', 'POST /api/layouts/:id/publish {classId}'
     ],
     classes: ['GET /api/classes/:classId/layouts', 'GET /api/classes/:classId/members'],
+    gate: ['GET /api/gate/status', 'POST /api/gate/unlock {key}', 'POST /api/gate/rotate {oldKey,newKey} (whitelist)', 'GET /api/gate/audit (gate token)', 'POST /api/gate/lock (gate token)'],
+    worlds: ['GET /api/worlds', 'GET /api/worlds/resumable', 'GET /api/worlds/:code/state'],
     socket: ['room:create', 'room:join', 'room:lock(host)', 'presence:update', 'player:move(alias)',
       'world:update', 'voice:start/stop/data', 'voice:offer/answer/ice (WebRTC signaling)',
       'peer:join/leave/presence', 'player:join/leave (alias)', 'room:host', 'room:state']
@@ -473,9 +819,14 @@ io.on('connection', (socket) => {
         items: Array.isArray(data.items) ? data.items : [],
         itemsUpdatedAt: Date.now(),
         itemsUpdatedBy: socket.id,
+        createdAt: new Date().toISOString(),
+        status: 'active',
+        lastActivityAt: new Date().toISOString(),
+        lastActivityBy: sanitizeName(data.name),
         peers: new Map()
       };
       rooms.set(code, room);
+      schedulePersist();
       joinRoom(socket, room, data.name, true, data.avatar);
       console.log('[ROOM+]', code, 'by', socket.id);
       cb && cb({ ok: true, code: code, isClass: isClass });
@@ -516,6 +867,7 @@ io.on('connection', (socket) => {
       const me = room.peers.get(socket.id);
       if (!me || !me.isHost) return cb && cb({ ok: false, error: 'Hanya host yang boleh mengunci.' });
       room.locked = !!(data && data.locked);
+      schedulePersist();
       io.to(room.code).emit('room:locked', { locked: room.locked });
       cb && cb({ ok: true, locked: room.locked });
     } catch (e) {
@@ -552,6 +904,10 @@ io.on('connection', (socket) => {
     room.items = data.items;
     room.itemsUpdatedAt = Date.now();
     room.itemsUpdatedBy = socket.id;
+    room.lastActivityAt = new Date().toISOString();
+    const me = room.peers.get(socket.id);
+    if (me) room.lastActivityBy = me.username;
+    schedulePersist();
     socket.to(room.code).emit('world:update', {
       items: room.items,
       itemsUpdatedAt: room.itemsUpdatedAt,
@@ -617,17 +973,11 @@ io.on('connection', (socket) => {
     socket.to(room.code).emit('player:leave', { id: socket.id });
 
     if (room.peers.size === 0) {
-      // Room kelas (SIAKAD) dipertahankan 15 mnt setelah sesi berakhir (FR-07);
-      // room acak dihapus langsung saat kosong.
-      if (room.isClass) {
-        setTimeout(() => {
-          const r = rooms.get(room.code);
-          if (r && r.peers.size === 0) { rooms.delete(room.code); console.log('[ROOM-]', room.code, '(class expired)'); }
-        }, 15 * 60 * 1000);
-      } else {
-        rooms.delete(room.code);
-        console.log('[ROOM-]', room.code, '(empty)');
-      }
+      // PRD v5.2 FR-43: dunia TETAP ADA saat 0 peserta (idle), tidak dihapus.
+      // Room acak kedaluwarsa via sweep 30 hari; room kelas dipertahankan.
+      room.status = 'idle';
+      schedulePersist();
+      console.log('[ROOM~]', room.code, '(idle, persisted)');
     } else if (wasHost) {
       const [nextSid, nextP] = room.peers.entries().next().value;
       nextP.isHost = true;

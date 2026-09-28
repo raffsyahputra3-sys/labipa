@@ -7,7 +7,10 @@
     "node": "18.x"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "rotate-key": "node scripts/gate-cli.js rotate",
+    "reset-key": "node scripts/gate-cli.js reset",
+    "verify-key": "node scripts/gate-cli.js verify"
   },
   "dependencies": {
     "express": "^4.19.2",

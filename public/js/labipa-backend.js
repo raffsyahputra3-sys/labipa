@@ -246,6 +246,85 @@ var StorageAdapter = {
   }
 };
 
+/* ---------------- Gate (PRD v4.0 FR-18/21/22) ----------------
+ * Token di sessionStorage 'labipa.gate_token'. Idle >2 jam →
+ * kunci sesi (tanpa reload, state utuh). Autosave & LabIPA lain
+ * memeriksa isLocked() dan jeda saat terkunci. */
+var GATE_TOKEN_KEY = 'labipa.gate_token';
+var GATE_IDLE_MS = 2 * 3600 * 1000; // FR-21 default 2 jam
+try {
+  var gm = /[?&]gate_idle=(\d+)/.exec(location.search);
+  if (gm) GATE_IDLE_MS = parseInt(gm[1], 10) * 60 * 1000;
+} catch (e) {}
+var gateExpiryTimer = null;
+var gateIdleTimer = null;
+function gateToken() { return ssGet(GATE_TOKEN_KEY); }
+function gateTouchIdle() {
+  if (gateIdleTimer) { try { clearTimeout(gateIdleTimer); } catch (e) {} }
+  gateIdleTimer = setTimeout(function () { Gate.lock('idle'); }, GATE_IDLE_MS);
+  window.LABIPA_GATE_LAST_ACTIVE = Date.now();
+}
+['mousedown', 'keydown', 'touchstart', 'wheel'].forEach(function (ev) {
+  try { document.addEventListener(ev, gateTouchIdle, { passive: true }); } catch (e) {}
+});
+var Gate = {
+  required: function () {
+    // Server /api/gate/status bilang wajib atau tidak; default wajib bila tak tahu
+    if (window.LABIPA_GATE_REQUIRED === false) return false;
+    return true;
+  },
+  token: gateToken,
+  isLocked: function () {
+    try { return window.LABIPA_GATE_LOCKED === true || !gateToken(); } catch (e) { return true; }
+  },
+  check: function () {
+    var t = gateToken();
+    if (!t) return Promise.resolve(false);
+    return fetch('/api/gate/status', { headers: { Authorization: 'Bearer ' + t } })
+      .then(function (r) { return r.json(); }).then(function (j) {
+        if (j && typeof j.required === 'boolean') window.LABIPA_GATE_REQUIRED = j.required;
+        return !!(j && j.unlocked);
+      }).catch(function () { return !!t; }); // offline → anggap terkunci lunak? tidak: token ada = lanjut
+  },
+  unlock: function (key) {
+    var k = String(key || '').toUpperCase().replace(/\s+/g, '');
+    return fetch('/api/gate/unlock', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: k })
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok) {
+          var e = new Error((j && j.error) || ('HTTP ' + r.status));
+          e.status = r.status; e.attemptsLeft = j && j.attemptsLeft; e.until = j && j.until;
+          throw e;
+        }
+        return j;
+      });
+    }).then(function (j) {
+      ssSet(GATE_TOKEN_KEY, j.token);
+      try { window.LABIPA_GATE_LOCKED = false; } catch (e) {}
+      if (gateExpiryTimer) { try { clearTimeout(gateExpiryTimer); } catch (e) {} }
+      try { gateExpiryTimer = setTimeout(function () { Gate.lock('expired'); }, (j.expiresIn || 43200) * 1000); } catch (e) {}
+      gateTouchIdle();
+      try { document.dispatchEvent(new CustomEvent('labipa:gate-unlock')); } catch (e) {}
+      return true;
+    });
+  },
+  lock: function (reason) {
+    var t = gateToken();
+    if (t) {
+      fetch('/api/gate/lock', { method: 'POST', headers: { Authorization: 'Bearer ' + t } }).catch(function () {});
+      ssDel(GATE_TOKEN_KEY);
+    }
+    try { window.LABIPA_GATE_LOCKED = true; } catch (e) {}
+    try { document.dispatchEvent(new CustomEvent('labipa:gate-lock', { detail: { reason: reason || 'manual' } })); } catch (e) {}
+  },
+  authHeader: function () {
+    var t = gateToken();
+    return t ? { Authorization: 'Bearer ' + t } : {};
+  }
+};
+
 /* ---------------- flags ---------------- */
 function loadFlags() {
   return fetch('/api/flags').then(function (r) { return r.json(); }).then(function (j) {
@@ -260,6 +339,7 @@ function loadFlags() {
 
 window.LabIPA = {
   Auth: AuthModule,
+  Gate: Gate,
   Storage: StorageAdapter,
   Remote: RemoteStore,
   Cache: LocalCache,
