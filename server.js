@@ -13,6 +13,7 @@ const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
+const dbm = require('./server/db'); // Sprint 1: adapter Postgres/Redis (fallback file-store)
 const { Server } = require('socket.io');
 
 const app = express();
@@ -92,7 +93,10 @@ const io = new Server(server, {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Health check untuk cron-job.org
-app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
+app.get('/health', async (req, res) => {
+  const db = await dbm.ping().catch(() => ({ mode: 'file', ok: true }));
+  res.json({ ok: true, ts: Date.now(), dbMode: db.mode || 'file' });
+});
 
 // =============================================================
 // PRD v4.0 — SINGLE-KEY ACCESS CONTROL (Master Key Gate)
@@ -1330,5 +1334,6 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  ║  LabIPA 3D Studio · Multiplayer Server       ║');
   console.log('  ║  Listening on port ' + String(PORT).padEnd(24) + ' ║');
   console.log('  ╚══════════════════════════════════════════════╝');
+  console.log('  DB mode: ' + dbm.mode + ' (set DATABASE_URL/REDIS_URL + npm i pg redis utk produksi)');
   console.log('');
 });

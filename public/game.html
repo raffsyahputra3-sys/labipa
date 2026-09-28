@@ -4551,6 +4551,26 @@ document.getElementById('mpLockBtn').addEventListener('click',function(){
       });
     }).catch(function(){});
   }catch(e){}
+  // Sprint 1: SSO (?sso=1 → mock OIDC; ?code= → tukar otomatis)
+  try{
+    const q=new URL(location.href).searchParams;
+    if(q.get('code')&&window.LabIPA&&window.LabIPA.Auth){
+      window.LabIPA.Auth.exchange(q.get('code'),{}).then(function(s){
+        if(s&&s.user){
+          if(s.user.name){
+            ['mpSoloName','mpCreateName','mpJoinName'].forEach(function(id){
+              const el=document.getElementById(id);if(el&&!el.value)el.value=String(s.user.name).slice(0,16);
+            });
+          }
+          if(s.user.classId){const jc=document.getElementById('mpJoinCode');if(jc&&!jc.value)jc.value=s.user.classId;}
+          try{showToast('Login SSO: '+s.user.name+' ('+s.user.role+')');}catch(e){}
+        }
+      }).catch(function(){try{showToast('SSO gagal — lanjut manual');}catch(e){}});
+    }else if(q.get('sso')==='1'){
+      const redir=encodeURIComponent(location.origin+location.pathname);
+      location.href='/oidc/login?redirect_uri='+redir;
+    }
+  }catch(e){}
   // PRD v4.0 FR-18/21: boot gate — overlay sebelum app bila server mewajibkan
   try{
     if(window.LabIPA&&window.LabIPA.Gate)labipaGateBoot();
