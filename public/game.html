@@ -4701,9 +4701,33 @@ function openWorldDetail(code){
   }).then(function(j){
     const items=(j&&j.items)||[];
     cps.innerHTML=items.length?'':'<div class="wm-cp">Belum ada checkpoint.</div>';
+    if(items.length>=2){
+      const bar=document.createElement('div');bar.className='wm-cp';
+      bar.innerHTML='<div class="row"><span>Pilih 2 untuk bandingkan</span></div>';
+      const btn=document.createElement('button');btn.type='button';btn.textContent='Bandingkan';btn.style.marginTop='6px';
+      const out=document.createElement('div');out.id='wmDiff';out.style.marginTop='6px';out.style.fontSize='11px';
+      btn.addEventListener('click',function(){
+        const sel=Array.prototype.filter.call(cps.querySelectorAll('input[data-cp]:checked'),function(x){return x;})
+          .map(function(x){return x.getAttribute('data-cp');});
+        if(sel.length!==2){showToast('Pilih tepat 2 checkpoint');return;}
+        out.textContent='Menghitung…';
+        fetch('/api/worlds/'+encodeURIComponent(code)+'/checkpoints/'+encodeURIComponent(sel[0])+'/diff/'+encodeURIComponent(sel[1]))
+          .then(function(r){return r.json();}).then(function(d){
+            if(!d||!d.ok){out.textContent='Diff gagal';return;}
+            const s=d.summary;
+            let html='<b>+'+s.added+' −'+s.removed+' ~'+s.moved+'</b> ('+(d.ms||0)+' ms)<br>';
+            (d.details.added||[]).slice(0,5).forEach(function(a){html+='· +'+String(a.item.itemKey||'?')+'<br>';});
+            (d.details.removed||[]).slice(0,5).forEach(function(a){html+='· −'+String(a.item.itemKey||'?')+'<br>';});
+            (d.details.moved||[]).slice(0,5).forEach(function(a){html+='· ~'+String((a.to&&a.to.itemKey)||'?')+' geser '+a.posDelta+'m<br>';});
+            out.innerHTML=html;
+          }).catch(function(){out.textContent='Diff gagal (jaringan)';});
+      });
+      bar.appendChild(btn);bar.appendChild(out);
+      cps.appendChild(bar);
+    }
     items.forEach(function(c){
       const d=document.createElement('div');d.className='wm-cp';
-      d.innerHTML='<div class="row"><span>'+String(c.name||c.id).replace(/</g,'&lt;')+' · '+(c.itemCount||0)+' item<br>'+String(c.createdAt||'').slice(0,16).replace('T',' ')+' · '+String(c.trigger||'')+'</span></div>';
+      d.innerHTML='<div class="row"><span><input type="checkbox" data-cp="'+c.id+'" style="margin-right:6px">'+String(c.name||c.id).replace(/</g,'&lt;')+' · '+(c.itemCount||0)+' item<br>'+String(c.createdAt||'').slice(0,16).replace('T',' ')+' · '+String(c.trigger||'')+'</span></div>';
       const row=d.firstChild;
       const rb=document.createElement('button');rb.textContent='Rollback';rb.type='button';
       rb.addEventListener('click',function(){

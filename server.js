@@ -906,6 +906,47 @@ app.get('/api/worlds/:code/checkpoints/:cid', (req, res) => {
   }
   res.json({ ok: true, item: c });
 });
+// Sprint 2 (C.1): diff 2 checkpoint — +N/-N/~N (≤500ms utk 100 item).
+// Item tanpa id stabil → cocokkan per itemKey + posisi terdekat (greedy, ≤0.5m).
+app.get('/api/worlds/:code/checkpoints/:a/diff/:b', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase().slice(0, 24);
+  const ca = checkpoints.get(req.params.a);
+  const cb = checkpoints.get(req.params.b);
+  if (!ca || !cb || ca.worldCode !== code || cb.worldCode !== code) {
+    return res.status(404).json({ ok: false, error: 'Checkpoint tidak ditemukan.' });
+  }
+  const t0 = Date.now();
+  const A = ca.items || [], B = cb.items || [];
+  const used = new Array(B.length).fill(false);
+  const added = [], removed = [], moved = [];
+  function dist2(p, q) {
+    const dx = (p.x || 0) - (q.x || 0), dz = (p.z || 0) - (q.z || 0);
+    return Math.sqrt(dx * dx + dz * dz);
+  }
+  A.forEach((ai, i) => {
+    let best = -1, bestD = 0.5;
+    for (let j = 0; j < B.length; j++) {
+      if (used[j] || B[j].itemKey !== ai.itemKey) continue;
+      const d = dist2(ai.pos || {}, B[j].pos || {});
+      if (d <= bestD) { bestD = d; best = j; }
+    }
+    if (best < 0) { removed.push({ idx: i, item: ai }); return; }
+    used[best] = true;
+    const bi = B[best];
+    const pd = dist2(ai.pos || {}, bi.pos || {});
+    const rd = Math.abs((ai.rotY || 0) - (bi.rotY || 0));
+    const st = (ai.stuckSurface || '') !== (bi.stuckSurface || '');
+    if (pd > 0.01 || rd > 0.01 || st) {
+      moved.push({ from: ai, to: bi, posDelta: +pd.toFixed(3), rotDelta: +rd.toFixed(3), restuck: st });
+    }
+  });
+  B.forEach((bi, j) => { if (!used[j]) added.push({ idx: j, item: bi }); });
+  res.json({
+    ok: true, from: ca.id, to: cb.id, ms: Date.now() - t0,
+    summary: { added: added.length, removed: removed.length, moved: moved.length },
+    details: { added: added, removed: removed, moved: moved }
+  });
+});
 app.post('/api/worlds/:code/checkpoints/:cid/rollback', (req, res) => {
   const code = String(req.params.code || '').toUpperCase().slice(0, 24);
   const room = rooms.get(code);
@@ -957,7 +998,7 @@ app.post('/api/worlds/:code/restore', (req, res) => {
   const room = rooms.get(code);
   if (!room || room.status !== 'archived') return res.status(404).json({ ok: false, error: 'Arsip tidak ditemukan.' });
   try {
-    const a = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'archive', code + '.json'), 'utf8'));
+    const a = JSON.parse(fs.readFileSync(path.join(archiveDir(), code + '.json'), 'utf8'));
     room.items = Array.isArray(a.items) ? a.items : [];
   } catch (e) { room.items = []; }
   room.status = 'idle';
@@ -965,11 +1006,22 @@ app.post('/api/worlds/:code/restore', (req, res) => {
   schedulePersist();
   res.json({ ok: true, meta: worldMeta(room), itemCount: room.items.length });
 });
+// Sprint 2: direktori arsip dapat diarahkan ke mount S3 (ARCHIVE_DIR),
+// mis. s3fs/rclone mount — tanpa SDK, tanpa ubah kode.
+function archiveDir() {
+  const d = process.env.ARCHIVE_DIR || path.join(DATA_DIR, 'archive');
+  try { fs.mkdirSync(d, { recursive: true }); } catch (e) {}
+  return d;
+}
 function archiveWorld(code, why) {
   const room = rooms.get(code);
   if (!room || room.status === 'archived') return;
-  try { fs.mkdirSync(path.join(DATA_DIR, 'archive'), { recursive: true }); } catch (e) {}
   dataWrite(path.join('archive', code + '.json'), { meta: worldMeta(room), items: room.items || [], archivedAt: new Date().toISOString(), why: why });
+  try {
+    const src = path.join(DATA_DIR, 'archive', code + '.json');
+    const dst = path.join(archiveDir(), code + '.json');
+    if (src !== dst) fs.copyFileSync(src, dst);
+  } catch (e) {}
   room.items = [];
   room.status = 'archived';
   schedulePersist();
