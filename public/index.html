@@ -837,41 +837,6 @@ body {
   </div>
 </footer>
 
-<!-- ============ PRD: OVERLAY LOADING + GAME LAYER (tanpa redirect) ============ -->
-<div id="game-loading" role="status" aria-label="Memuat ruang lab">
-  <div class="load-box">
-    <div class="label-mono mb-2">LABIPA · 3D STUDIO</div>
-    <div class="font-serif font-bold text-lg">MEMUAT RUANG LAB...</div>
-    <div class="load-bar"><div class="load-fill" id="load-fill"></div></div>
-    <div class="label-mono mt-2" id="load-pct">0%</div>
-  </div>
-</div>
-
-<div id="game-layer" aria-label="Game LabIPA">
-  <iframe id="game-frame" title="LabIPA Game" allow="camera; microphone; fullscreen"></iframe>
-  <div id="game-hud">
-    <button id="hud-toggle" onclick="toggleHud()" class="btn-ghost px-2 py-1 text-xs" title="Sembunyikan/tampilkan info">▾</button>
-    <span class="hud-pill" id="hud-room">SOLO</span>
-    <span class="hud-pill" id="hud-user">—</span>
-    <span class="hud-pill" id="hud-players">👥 1</span>
-    <span class="hud-pill" id="hud-mic">🎤 OFF</span>
-    <span class="hud-actions">
-      <button onclick="togglePauseMenu(true)" class="btn-ghost px-3 py-1.5 text-xs" style="background:var(--paper-hi)">Pause</button>
-      <button onclick="exitToStudio()" class="btn-ink px-3 py-1.5 text-xs">Keluar</button>
-    </span>
-  </div>
-  <div id="pause-menu">
-    <div class="paper-panel p-6 text-center" style="width:min(360px,calc(100vw - 48px))">
-      <div class="label-mono mb-2">PAUSE</div>
-      <p class="text-sm mb-4">Kembali ke Avatar Studio? Avatar tetap tersimpan.</p>
-      <div class="flex gap-2 justify-center">
-        <button onclick="togglePauseMenu(false)" class="btn-ghost px-4 py-2 text-xs">Lanjut</button>
-        <button onclick="exitToStudio()" class="btn-ink px-4 py-2 text-xs">Keluar ke Studio</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- ============ TOAST ============ -->
 <div id="toast" class="fixed left-1/2 pointer-events-none hidden" style="bottom:100px;z-index:120">
   <div class="paper-panel px-4 py-2.5 text-xs font-semibold flex items-center gap-2 toast-anim">
@@ -1874,87 +1839,6 @@ function formatDisplayCode(raw) {
   if (c.length !== 6) return String(raw || '').toUpperCase();
   return 'LAB-' + c.slice(0, 4) + '-' + c.slice(4);
 }
-// ---- PRD 5.1: transisi overlay (TANPA navigasi halaman) ----
-function runLoadingBar(done) {
-  const ov = document.getElementById('game-loading');
-  const fill = document.getElementById('load-fill');
-  const pct = document.getElementById('load-pct');
-  let p = 0;
-  ov.classList.add('show');
-  const t = setInterval(() => {
-    p = Math.min(100, p + 12 + Math.random() * 18);
-    if (fill) fill.style.width = p + '%';
-    if (pct) pct.textContent = Math.floor(p) + '%';
-    if (p >= 100) { clearInterval(t); setTimeout(done, 120); }
-  }, 60);
-}
-function transitionToGame(session, params) {
-  setAppState('loading');
-  // BUG#2: pastikan splash opening tidak nyangkut menutupi game.
-  try { const op = document.getElementById('opening'); if (op) op.classList.add('hide'); } catch (e) {}
-  runLoadingBar(() => {
-    const layer = document.getElementById('game-layer');
-    const frame = document.getElementById('game-frame');
-    const q = new URLSearchParams(params).toString();
-    const hudRoom = document.getElementById('hud-room');
-    const hudUser = document.getElementById('hud-user');
-    if (hudRoom) hudRoom.textContent = (params.mode || 'solo').toUpperCase() + (params.code ? ' · ' + formatDisplayCode(params.code) : '');
-    if (hudUser) hudUser.textContent = params.name || session.player.name || '—';
-    // Game asli (Socket.IO) tetap dipakai — dimuat di iframe overlay, bukan redirect.
-    try {
-      frame.src = 'game.html' + (q ? '?' + q : '');
-    } catch (e) {
-      console.error('[Room]', e);
-      showToast('Gagal memuat game: ' + e.message);
-      setAppState('studio');
-      document.getElementById('game-loading').classList.remove('show');
-      return;
-    }
-    document.getElementById('game-loading').classList.remove('show');
-    layer.classList.add('show', 'fade-in');
-    setAppState('in_game');
-    showToast('Selamat datang, ' + (session.player.title ? session.player.title + ' ' : '') + session.player.name + '!');
-  });
-}
-function togglePauseMenu(show) {
-  const m = document.getElementById('pause-menu');
-  if (!m) return;
-  m.classList.toggle('show', !!show);
-}
-// Mini-bar HUD bisa dilipat agar tidak menutupi tombol/info game di bawahnya.
-function toggleHud() {
-  const h = document.getElementById('game-hud');
-  if (!h) return;
-  const collapsed = h.classList.toggle('hud-collapsed');
-  const t = document.getElementById('hud-toggle');
-  if (t) t.textContent = collapsed ? '▸' : '▾';
-}
-function exitToStudio(skipConfirm) {
-  if (!skipConfirm) {
-    try {
-      if (!window.confirm('Keluar dari game? Progress tidak tersimpan.')) return;
-    } catch (e) {}
-  }
-  try {
-    const frame = document.getElementById('game-frame');
-    if (frame) frame.src = 'about:blank';
-  } catch (e) {}
-  try {
-    if (roomChannel && roomState.roomCode) roomChannel.postMessage({ type: 'LEAVE', roomCode: roomState.roomCode });
-  } catch (e) {}
-  togglePauseMenu(false);
-  document.getElementById('game-layer').classList.remove('show', 'fade-in');
-  // BUG#2: loading yang nyangkut (exit saat loading) ikut disembunyikan.
-  try { document.getElementById('game-loading').classList.remove('show'); } catch (e) {}
-  try { if (studioNet.handoffTimer) { clearTimeout(studioNet.handoffTimer); studioNet.handoffTimer = null; } } catch (e) {}
-  // restore tombol create/join
-  const cb = document.getElementById('create-btn');
-  if (cb) { cb.innerHTML = 'Buat Room <i class="fa-solid fa-arrow-right"></i>'; cb.disabled = false; }
-  const jb = document.getElementById('join-btn');
-  if (jb) { jb.innerHTML = 'Gabung Room <i class="fa-solid fa-arrow-right"></i>'; jb.disabled = false; }
-  setAppState('studio');
-  showToast('Kembali ke Avatar Studio ✓');
-}
 // BUG#1: single source of truth lintas studio ↔ game.
 // - studio generate SEKALI (createRoom) → game memakai apa adanya
 // - game melaporkan kode OTORITATIF server via postMessage → studio sinkron
@@ -1997,49 +1881,6 @@ function restoreUnifiedState() {
     if (st && st.player && st.player.name) studioNet.playerName = st.player.name;
   } catch (e) {}
 }
-// Pesan dari iframe game (lihat mpNotifyParent di game.html).
-window.addEventListener('message', function (e) {
-  try {
-    const d = e.data || {};
-    if (!d || d.src !== 'labipa-game') return;
-    if (d.type === 'labipa-room-code' && d.code) {
-      // Kode otoritatif server → sinkron ke SEMUA UI studio (BUG#1).
-      // Watchdog ikut dimatikan: handoff terbukti berhasil.
-      try { if (studioNet.handoffTimer) { clearTimeout(studioNet.handoffTimer); studioNet.handoffTimer = null; } } catch (e) {}
-      const six = normalizeJoinCode(d.code);
-      roomState.serverCode = six;
-      roomState.roomCode = d.formatted || formatDisplayCode(six);
-      const disp = document.getElementById('room-code-display');
-      if (disp) disp.textContent = roomState.roomCode;
-      const box = document.getElementById('room-code-box');
-      if (box) box.classList.remove('hidden');
-      const hud = document.getElementById('hud-room');
-      if (hud) hud.textContent = ((studioNet.gameMode || '').toUpperCase() || 'ROOM') + ' · ' + roomState.roomCode;
-      persistUnifiedState();
-    } else if (d.type === 'labipa-exit') {
-      // User klik Keluar di dalam game (sudah confirm di sana) → tutup overlay.
-      exitToStudio(true);
-    } else if (d.type === 'labipa-handoff-failed') {
-      // BUG#2: game gagal auto-mulai (server tak terjangkau) — beri tahu user di studio.
-      try { if (studioNet.handoffTimer) { clearTimeout(studioNet.handoffTimer); studioNet.handoffTimer = null; } } catch (e) {}
-      showToast('Game gagal mulai — server tak terjangkau. Coba Keluar lalu ulangi.');
-      console.warn('[Room] handoff gagal di game:', d.mode);
-    } else if (d.type === 'labipa-mp-state') {
-      // Fungsi lobby lama yang pindah ke baru: pemain, host, mic tampil di HUD studio.
-      try {
-        const hp = document.getElementById('hud-players');
-        if (hp) hp.textContent = '👥 ' + (d.count || 1) + (d.max ? '/' + d.max : '');
-        const hm = document.getElementById('hud-mic');
-        if (hm) hm.textContent = d.mic ? (d.speakingLocal ? '🎙 BICARA' : '🎙 ON') : '🎤 OFF';
-        if (Array.isArray(d.players)) {
-          roomState.players = [{ name: studioNet.playerName || 'Host', host: !!d.isHost }]
-            .concat(d.players.map(p => ({ name: p.name, host: !!p.isHost })));
-          renderRoomPlayers();
-        }
-      } catch (err) {}
-    }
-  } catch (err) {}
-});
 function quickEnterGame() {
   // Tombol header "Masuk Game": tanpa redirect — buka panel room / mulai solo cepat.
   const soloName = (document.getElementById('solo-name') || {}).value || '';
@@ -2048,37 +1889,68 @@ function quickEnterGame() {
   switchRoomTab('solo');
   showToast('Isi nama peneliti dulu (min 3 karakter)');
 }
-// Backward-compat: goToGame TIDAK redirect lagi (PRD: 0 navigasi).
+// Masuk game = pindah halaman sungguhan ke game.html (tanpa iframe/overlay).
+// Kode ruangan dikirim sebagai ?room= — BUKAN ?code=, yang dipakai SSO di game.html.
 function goToGame(params) {
   const mode = (params && params.mode) || 'solo';
   const name = (params && params.name) || 'Peneliti';
+  const room = (params && (params.code || params.roomCode)) || '';
   studioNet.playerName = name;
   studioNet.gameMode = mode;
   studioNet.gameStartedAt = Date.now();
-  const session = createGameSession(mode, {
+  createGameSession(mode, {
     name: name,
     title: titleOf(mode === 'solo' ? 'solo' : mode),
-    roomCode: (params && (params.code || params.roomCode)) || null,
+    roomCode: room || null,
     capacity: (params && params.max) || roomState.capacity,
     visibility: roomState.visibility
   });
   persistUnifiedState();
-  // BUG#2 watchdog: mode create/join WAJIB lapor kode dalam 25 dtk.
-  // Kalau tidak (server mati/offline), beri tahu user — jangan diam dengan layar gelap.
-  try {
-    if (studioNet.handoffTimer) clearTimeout(studioNet.handoffTimer);
-    studioNet.handoffTimer = null;
-    if (mode === 'create' || mode === 'join') {
-      studioNet.handoffTimer = setTimeout(() => {
-        studioNet.handoffTimer = null;
-        if (appState === 'in_game' && !roomState.serverCode) {
-          showToast('Gagal terhubung ke server — cek koneksi / coba Keluar lalu ulangi');
-          console.warn('[Room] handoff timeout: tidak ada labipa-room-code dalam 25 dtk');
-        }
-      }, 25000);
-    }
-  } catch (e) {}
-  transitionToGame(session, params);
+  const q = new URLSearchParams({ mode: mode, name: name });
+  if (room) {
+    // Kode acak → 6 karakter; kode kelas (mis. 8A-IPA-2026) dikirim utuh
+    const raw = String(room).toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    q.set('room', raw.replace(/^LAB-?/, '').replace(/-/g, '').length <= 6 ? normalizeJoinCode(room) : raw.slice(0, 24));
+  }
+  if (params && params.max) q.set('max', String(params.max));
+  location.href = 'game.html?' + q.toString();
+}
+
+// ---- Lanjutkan ruangan sebelumnya ----
+// Dunia tersimpan di server per KODE ruangan. Perangkat ini mengingat ruangan
+// yang pernah dimasuki (labipa.recentRooms, diisi game.html) → tombol
+// "Lanjutkan" masuk lagi ke kode yang sama, tata letak terakhir utuh.
+function renderResumeRooms() {
+  let rec = [];
+  try { rec = JSON.parse(localStorage.getItem('labipa.recentRooms') || '[]'); } catch (e) {}
+  if (!Array.isArray(rec) || !rec.length) return;
+  const box = document.createElement('div');
+  box.id = 'resume-rooms';
+  box.className = 'paper-panel p-3';
+  box.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:60;width:min(300px,calc(100vw - 32px))';
+  box.innerHTML = '<div class="label-mono mb-2">LANJUTKAN RUANGAN TERAKHIR</div>';
+  rec.slice(0, 3).forEach(function (r) {
+    const code = String(r.code || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24);
+    if (!code) return;
+    fetch('/api/worlds/' + encodeURIComponent(code) + '/state').then(function (x) { return x.json(); }).then(function (j) {
+      if (!j || !j.ok) return; // dunia sudah tidak ada di server → jangan tawarkan
+      const m = j.meta || {};
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn-ink w-full px-3 py-2 text-xs mb-1';
+      b.style.textAlign = 'left';
+      const label = code.length === 6 ? formatDisplayCode(code) : code;
+      let when = '';
+      try { if (m.lastActivityAt) when = new Date(m.lastActivityAt).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) {}
+      b.textContent = '▶ ' + label + ' · ' + (m.itemCount || 0) + ' item' + (when ? ' · ' + when : '') + (m.online ? ' · ' + m.online + ' online' : '');
+      b.addEventListener('click', function () {
+        const nm = (document.getElementById('join-name') || {}).value || r.name || studioNet.playerName || 'Peneliti';
+        goToGame({ mode: 'join', name: String(nm).trim().slice(0, 16) || 'Peneliti', code: code });
+      });
+      box.appendChild(b);
+      if (!box.parentNode) document.body.appendChild(box);
+    }).catch(function () {});
+  });
 }
 
 function startSolo() {
@@ -2097,7 +1969,7 @@ function startSolo() {
   } catch (e) {}
   playUiSound('eureka');
   showToast('Selamat datang, ' + name + '! Membuka game...');
-  setTimeout(() => goToGame({ mode: 'solo', name }), 300);
+  goToGame({ mode: 'solo', name });
 }
 
 function createRoom() {
@@ -2134,7 +2006,7 @@ function createRoom() {
     showToast('Room ' + code + ' dibuat');
     // BUG#1: kirim kode 6-char (dinormalisasi) sebagai `code` agar game
     // memakai kode studio apa adanya — single source of truth, tanpa generate ulang.
-    setTimeout(() => goToGame({ mode: 'create', name, max: roomState.capacity, roomCode: code, code: normalizeJoinCode(code) }), 400);
+    goToGame({ mode: 'create', name, max: roomState.capacity, code: code });
   } catch (err) {
     console.error('[Room]', err);
     showToast('Gagal: ' + err.message);
@@ -2250,7 +2122,7 @@ function joinRoom() {
     try { localStorage.setItem('labipa_player', JSON.stringify({ name })); } catch (e) {}
     playUiSound('eureka');
     // Join asli dilakukan via Socket.IO di game.html (?mode=join&code=...).
-    setTimeout(() => goToGame({ mode: 'join', name, code }), 400);
+    goToGame({ mode: 'join', name, code });
   } catch (err) {
     console.error('[Room]', err);
     status.className = 'status-line err';
@@ -2412,6 +2284,7 @@ window.onload = () => {
   }
   // BUG#1: pulihkan sesi (kode room host tetap setelah refresh).
   try { restoreUnifiedState(); } catch (e) {}
+  try { renderResumeRooms(); } catch (e) {}
   // PRD: cleanup room demo > 1 jam + ESC untuk pause
   try {
     const store = demoRoomStore();
@@ -2421,14 +2294,6 @@ window.onload = () => {
       if (now - (store[k].createdAt || 0) > 3600e3) { delete store[k]; dirty = true; }
     });
     if (dirty) demoRoomSave(store);
-  } catch (e) {}
-  try {
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && appState === 'in_game') {
-        const m = document.getElementById('pause-menu');
-        togglePauseMenu(!(m && m.classList.contains('show')));
-      }
-    });
   } catch (e) {}
   // Opening gambar: tampil singkat lalu masuk studio
   try {

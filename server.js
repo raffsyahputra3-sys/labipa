@@ -41,7 +41,11 @@ function dataRead(file, fb) {
   try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf8')); }
   catch (e) { return fb; }
 }
+// Berkas state yang dicerminkan ke database (bila DATABASE_URL di-set) agar
+// selamat dari disk host yang terhapus. Arsip memakai kunci 'archive/KODE.json'.
+const DB_MIRROR = ['rooms.json', 'layouts.json', 'checkpoints.json', 'notifications.json'];
 function dataWrite(file, obj, mode) {
+  if (DB_MIRROR.indexOf(file) >= 0) dbm.put(file, obj);
   try {
     fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(obj), { mode: mode || 0o644 });
     return true;
@@ -60,7 +64,7 @@ function persistAll() {
         code: r.code, isClass: !!r.isClass, locked: !!r.locked,
         maxPlayers: r.maxPlayers, hostUid: r.hostUid,
         items: r.items, itemsUpdatedAt: r.itemsUpdatedAt, itemsUpdatedBy: r.itemsUpdatedBy,
-        createdAt: r.createdAt, status: r.peers && r.peers.size ? 'active' : (r.status || 'idle'),
+        createdAt: r.createdAt, status: worldStatus(r),
         parentWorldId: r.parentWorldId || null, forkName: r.forkName || null,
         notifiedH3: !!r.notifiedH3, notifiedH7: !!r.notifiedH7, notifiedH30: !!r.notifiedH30,
         lastActivityAt: r.lastActivityAt, lastActivityBy: r.lastActivityBy,
@@ -135,6 +139,11 @@ function gateVerify(key, stored) {
     return a.length === b.length && crypto.timingSafeEqual(a, b);
   } catch (e) { return false; }
 }
+// Satu aturan normalisasi untuk env, unlock, rotasi, dan CLI (huruf besar,
+// tanpa spasi). Kalau beda, kunci dari env tidak akan pernah cocok saat unlock.
+function gateNormKey(key) {
+  return String(key == null ? '' : key).toUpperCase().replace(/\s+/g, '');
+}
 function gateRandomKey(len) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let s = '';
@@ -161,12 +170,12 @@ function gateSaveFile(hash) {
 (function gateInit() {
   if (!gateLoadFile()) {
     if (process.env.MASTER_KEY) {
-      gateHash = gateMakeHash(process.env.MASTER_KEY.trim());
+      gateHash = gateMakeHash(gateNormKey(process.env.MASTER_KEY));
       gateSaveFile(gateHash);
       console.log('[GATE] kunci dari env MASTER_KEY tersimpan (hash).');
     } else if (process.env.MASTER_KEY_BACKUP) {
       // FR-23 recovery: kunci cadangan dari password manager
-      gateHash = gateMakeHash(process.env.MASTER_KEY_BACKUP.trim());
+      gateHash = gateMakeHash(gateNormKey(process.env.MASTER_KEY_BACKUP));
       gateSaveFile(gateHash);
       console.log('[GATE] recovery via MASTER_KEY_BACKUP — segera rotasi dengan npm run rotate-key.');
       gateAudit({ event: 'gate_recovery', success: true, ip: 'localhost', reason: 'backup_env' });
@@ -259,7 +268,7 @@ app.get('/api/gate/status', (req, res) => {
 app.post('/api/gate/unlock', (req, res) => {
   const ip = gateIp(req);
   const ua = String(req.headers['user-agent'] || '').slice(0, 200);
-  const rawKey = String((req.body && req.body.key) || '').toUpperCase().replace(/\s+/g, '');
+  const rawKey = gateNormKey(req.body && req.body.key);
   const rec = gateFails.get(ip);
   if (rec && rec.blockedUntil > Date.now()) {
     gateAudit({ event: 'gate_unlock_attempt', success: false, ip: ip, userAgent: ua, keyLength: rawKey.length, keyPrefix: rawKey.slice(0, 2), reason: 'blocked', attemptNumber: gateRecentFails(ip, 15 * 60 * 1000) });
@@ -292,8 +301,8 @@ app.post('/api/gate/rotate', (req, res) => {
     gateAudit({ event: 'gate_rotate', success: false, ip: ip, userAgent: ua, reason: 'not_whitelisted' });
     return res.status(403).json({ ok: false, error: 'Rotasi hanya dari IP whitelist.' });
   }
-  const oldKey = String((req.body && req.body.oldKey) || '').toUpperCase().replace(/\s+/g, '');
-  const newKey = String((req.body && req.body.newKey) || '').toUpperCase().replace(/\s+/g, '');
+  const oldKey = gateNormKey(req.body && req.body.oldKey);
+  const newKey = gateNormKey(req.body && req.body.newKey);
   if (!gateVerify(oldKey, gateHash)) {
     gateAudit({ event: 'gate_rotate', success: false, ip: ip, userAgent: ua, reason: 'bad_old_key' });
     return res.status(401).json({ ok: false, error: 'Kunci lama salah.' });
@@ -409,11 +418,53 @@ function sanitizeAvatar(a) {
   return Object.keys(out).length ? out : null;
 }
 
-function joinRoom(socket, room, name, isHost, avatar) {
+// Peran pengguna dari sesi SSO/guest (klaim client: 'guru' / 'siswa').
+// Hanya dipakai untuk MEMBATASI (siswa tak boleh jadi host room kelas),
+// tidak pernah memberi hak baru — client lama tanpa role = null = non-guru.
+function sanitizeUserRole(role) {
+  const r = String(role == null ? '' : role).toLowerCase().trim();
+  if (r === 'guru') return 'guru';
+  if (r === 'siswa') return 'siswa';
+  return null;
+}
+
+function joinRoom(socket, room, name, isHost, avatar, userRole) {
+  // Satu socket = satu room: lepas langganan room lain (mis. sisa sesi yang
+  // dipulihkan connectionStateRecovery) agar siaran room lama tidak bocor.
+  for (const r of socket.rooms) { if (r !== socket.id && r !== room.code) socket.leave(r); }
   socket.join(room.code);
   socket.data.roomCode = room.code;
 
-  const color = MP_COLORS[room.peers.size % MP_COLORS.length];
+  // Dunia persisten bisa kosong tanpa host (semua keluar / server restart):
+  // kunci sesi sebelumnya gugur agar room tidak terkunci selamanya —
+  // kalau tidak, room terkunci tanpa host tak bisa dimasuki siapa pun lagi.
+  if (room.peers.size === 0) room.locked = false;
+  let hasHost = false;
+  for (const p of room.peers.values()) { if (p.isHost) hasHost = true; }
+  // FR-1: room KELAS tidak boleh otomatis memberi host ke siswa pertama.
+  // Host hanya untuk guru (klaim role dari sesi login). Room non-kelas
+  // (kode acak 6 char) mempertahankan perilaku lama: peserta pertama host.
+  const claimedRole = sanitizeUserRole(userRole);
+  const roomWasEmpty = room.peers.size === 0;
+  if (!hasHost) {
+    if (room.isClass) {
+      if (claimedRole === 'guru') { isHost = true; room.hostUid = socket.id; }
+      // Bukan guru → room kelas tetap tanpa host (menunggu guru masuk).
+      // hostUid basi (pemilik lama sudah keluar / pembuat siswa) dibersihkan.
+      else { isHost = false; if (roomWasEmpty || !room.hostUid || room.hostUid === socket.id) room.hostUid = null; }
+    } else {
+      isHost = true; room.hostUid = socket.id;
+    }
+  } else if (isHost && room.isClass && claimedRole !== 'guru') {
+    // Siswa tidak boleh mengklaim host di room kelas yang sudah ada host.
+    isHost = false;
+  }
+
+  // Warna pertama yang belum dipakai (indeks berdasar jumlah peserta bisa
+  // bentrok setelah ada yang keluar lalu masuk lagi).
+  const usedColors = new Set();
+  for (const p of room.peers.values()) usedColors.add(p.color);
+  const color = MP_COLORS.find(c => !usedColors.has(c)) || MP_COLORS[room.peers.size % MP_COLORS.length];
 
   const presence = {
     uid: socket.id,
@@ -421,6 +472,7 @@ function joinRoom(socket, room, name, isHost, avatar) {
     color: color,
     isHost: !!isHost,
     role: isHost ? 'host' : 'editor', // v5.1 FR-34: host / editor / viewer
+    userRole: claimedRole, // 'guru' / 'siswa' / null — untuk suksesi host room kelas
     voice: false,
     avatar: sanitizeAvatar(avatar),
     x: 1, y: 1.6, z: 6, rotY: 0
@@ -469,6 +521,58 @@ function joinRoom(socket, room, name, isHost, avatar) {
     id: socket.id, name: presence.username, color: presence.color,
     position: { x: presence.x, y: presence.y, z: presence.z }
   });
+}
+
+// Keluarkan socket dari room-nya: saat disconnect, atau sebelum create/join
+// lagi (tanpa ini peserta lama tertinggal sebagai "hantu" di room sebelumnya).
+function leaveRoom(socket) {
+  const room = rooms.get(socket.data.roomCode);
+  socket.data.roomCode = null;
+  if (!room) return;
+  socket.leave(room.code);
+  const me = room.peers.get(socket.id);
+  if (!me) return;
+  room.peers.delete(socket.id);
+  socket.to(room.code).emit('peer:leave', { peer: socket.id });
+  // PRD v1.0 §6.2 — alias player:leave
+  socket.to(room.code).emit('player:leave', { id: socket.id });
+
+  if (room.peers.size === 0) {
+    // PRD v5.2 FR-43: dunia TETAP ADA saat 0 peserta (idle), tidak dihapus.
+    // read-only/archived TIDAK diturunkan ke idle oleh disconnect.
+    if (!room.status || room.status === 'active') {
+      room.status = 'idle';
+      // Sesi berakhir → checkpoint session-idle (bila berubah). Sweep per jam
+      // tidak pernah melihat transisi ini karena status sudah idle di sini.
+      checkpointIfChanged(room.code, 'session-idle', room.lastActivityBy);
+    }
+    schedulePersist();
+    console.log('[ROOM~]', room.code, '(' + (room.status || 'idle') + ', persisted)');
+  } else if (me.isHost) {
+    // FR-1: host room kelas hanya diteruskan ke guru. Bila tidak ada guru
+    // tersisa, room tetap tanpa host (kunci tidak berubah) — host TIDAK
+    // boleh jatuh ke siswa. Room biasa mempertahankan perilaku lama.
+    let nextSid = null;
+    if (room.isClass) {
+      for (const [sid, p] of room.peers) {
+        if (p.userRole === 'guru') { nextSid = sid; break; }
+      }
+      if (nextSid === null) room.hostUid = null;
+    } else {
+      const next = room.peers.entries().next().value;
+      if (next) nextSid = next[0];
+    }
+    if (nextSid !== null) {
+      const nextP = room.peers.get(nextSid);
+      nextP.isHost = true;
+      nextP.role = 'host'; // penerus bisa saja viewer — host harus boleh mengedit
+      room.hostUid = nextSid;
+      io.to(room.code).emit('room:host', { peer: nextSid });
+      console.log('[ROOM*]', room.code, 'host →', nextSid);
+    } else if (room.isClass) {
+      console.log('[ROOM*]', room.code, 'host keluar, menunggu guru (tanpa host)');
+    }
+  }
 }
 
 // =============================================================
@@ -522,7 +626,8 @@ app.post('/api/auth/guest', (req, res) => {
   if (!FLAGS.ALLOW_GUEST) return res.status(403).json({ ok: false, error: 'Guest mode dimatikan.' });
   const name = sanitizeName((req.body && req.body.name) || 'Tamu');
   const user = {
-    userId: 'GUEST-' + Date.now().toString(36).toUpperCase(),
+    // + acak: dua tamu yang login di milidetik yang sama tidak boleh berbagi userId
+    userId: 'GUEST-' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
     name: name, role: 'siswa',
     classId: (req.body && req.body.classId) || null
   };
@@ -569,7 +674,8 @@ app.get('/api/auth/me', (req, res) => {
 const layouts = new Map();
 let checkpoints = new Map(); // id -> checkpoint immutable (diisi penuh di seksi checkpoint)
 // PRD v5.2: restore dunia + layout dari disk saat boot (survive restart)
-(function restorePersisted() {
+// Dipanggil dari bootRestore() (bawah) — setelah file diisi ulang dari database.
+function restorePersisted() {
   try {
     const r = dataRead('rooms.json', null);
     if (r && r.rooms) {
@@ -607,7 +713,7 @@ let checkpoints = new Map(); // id -> checkpoint immutable (diisi penuh di seksi
       if (checkpoints.size) console.log('[WORLD] restore ' + checkpoints.size + ' checkpoint dari disk.');
     }
   } catch (e) {}
-})();
+}
 // Sapu lifecycle dunia (Sprint 2): idle→read-only 30h→arsip 90h→hapus 180h.
 // + auto-checkpoint session-idle + notifikasi H-3/H-7 + trim audit 90 hari.
 setInterval(() => {
@@ -618,14 +724,16 @@ setInterval(() => {
       const last = r.lastActivityAt ? Date.parse(r.lastActivityAt) : (r.itemsUpdatedAt || 0);
       if (!last) continue;
       const days = (now - last) / (24 * 3600 * 1000);
+      // Dunia dibuka lagi → hitung mundur mulai dari awal, jadi notifikasi
+      // H-7/H-3/H-30 boleh terkirim lagi di siklus idle berikutnya.
+      if (days < 23) { r.notifiedH3 = false; r.notifiedH7 = false; }
+      if (days < 60) r.notifiedH30 = false;
       if (r.status === 'active') {
-        // Transisi active→idle + checkpoint session-idle (bila berubah)
+        // Transisi active→idle + checkpoint session-idle (bila berubah).
+        // Hanya dunia yang masih 'active' tanpa peserta (server mati saat ada
+        // sesi); keluar normal ditangani leaveRoom().
         r.status = 'idle';
-        const lastCp = [...checkpoints.values()].filter(c => c.worldCode === code)
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-        if (!lastCp || lastCp.fp !== fpItems(r.items)) {
-          makeCheckpoint(code, 'session-idle', '', r.lastActivityBy);
-        }
+        checkpointIfChanged(code, 'session-idle', r.lastActivityBy);
         notify('idle', code, 'Dunia "' + code + '" idle — state tersimpan otomatis.');
       }
       if (r.status === 'idle' && days >= 27 && days < 30 && !r.notifiedH3) {
@@ -677,10 +785,12 @@ function publicLayout(l) {
     createdAt: l.createdAt, updatedAt: l.updatedAt, items: l.items
   };
 }
-function validItems(items) {
-  if (!Array.isArray(items)) return false;
-  return items.every(it => it && typeof it.itemKey === 'string' &&
+function validItem(it) {
+  return !!(it && typeof it.itemKey === 'string' &&
     it.pos && typeof it.pos.x === 'number' && typeof it.pos.z === 'number');
+}
+function validItems(items) {
+  return Array.isArray(items) && items.every(validItem);
 }
 function authUser(req) {
   const t = readBearer(req);
@@ -748,10 +858,12 @@ app.put('/api/layouts/:id', (req, res) => {
   if (typeof b.name === 'string' && b.name.trim()) l.name = b.name.trim().slice(0, 80);
   l.version += 1;
   l.updatedAt = new Date().toISOString();
-  // Live Edit: siarkan versi baru ke room kelas (guru wins)
-  if (FLAGS.ENABLE_LIVE_EDIT && l.classId) {
+  // Live Edit: siarkan versi baru ke room kelas (guru wins). Draf pribadi
+  // siswa (belum dipublish) TIDAK boleh menimpa dunia kelas bersama —
+  // classId layout terisi otomatis dari sesi, jadi autosave siswa ikut kena.
+  if (FLAGS.ENABLE_LIVE_EDIT && l.classId && (u.role === 'guru' || l.published)) {
     const room = rooms.get(String(l.classId).toUpperCase());
-    if (room) {
+    if (room && room.status !== 'read-only' && room.status !== 'archived') {
       room.items = l.items; room.itemsUpdatedAt = Date.now(); room.itemsUpdatedBy = 'api';
       io.to(room.code).emit('world:update', {
         items: room.items, itemsUpdatedAt: room.itemsUpdatedAt,
@@ -819,11 +931,17 @@ app.post('/api/layouts/:id/publish', (req, res) => {
 });
 
 // PRD v5.2 FR-42/46 — daftar dunia + metadata (lobby "Lanjutkan")
+// Status efektif: ada peserta = 'active', KECUALI read-only/archived yang
+// tetap terkunci. Dipakai juga saat persist — jangan sampai dunia read-only
+// tertulis 'active' ke disk hanya karena sedang ditonton.
+function worldStatus(r) {
+  return (r.peers && r.peers.size && (!r.status || r.status === 'idle' || r.status === 'active')) ? 'active' : (r.status || 'idle');
+}
 function worldMeta(r) {
   return {
     code: r.code, isClass: !!r.isClass, locked: !!r.locked,
     maxPlayers: r.maxPlayers, online: r.peers ? r.peers.size : 0,
-    status: (r.peers && r.peers.size && (!r.status || r.status === 'idle' || r.status === 'active')) ? 'active' : (r.status || 'idle'),
+    status: worldStatus(r),
     parentWorldId: r.parentWorldId || null, forkName: r.forkName || null,
     itemCount: Array.isArray(r.items) ? r.items.length : 0,
     createdAt: r.createdAt || null,
@@ -871,6 +989,16 @@ function makeCheckpoint(code, trigger, name, by) {
   checkpoints.set(cp.id, cp);
   saveCheckpoints();
   return cp;
+}
+// Checkpoint otomatis hanya bila isi dunia berubah sejak checkpoint terakhir
+// (dunia kosong yang belum pernah di-checkpoint dilewati).
+function checkpointIfChanged(code, trigger, by) {
+  const room = rooms.get(code);
+  if (!room) return null;
+  const lastCp = [...checkpoints.values()].filter(c => c.worldCode === code)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (lastCp ? lastCp.fp === fpItems(room.items) : !(room.items || []).length) return null;
+  return makeCheckpoint(code, trigger, '', by);
 }
 function notify(type, code, text) {
   try {
@@ -1003,17 +1131,32 @@ app.post('/api/worlds/:code/archive', (req, res) => {
   const room = rooms.get(code);
   if (!room) return res.status(404).json({ ok: false, error: 'Dunia tidak ditemukan.' });
   const n = Array.isArray(room.items) ? room.items.length : 0;
-  archiveWorld(code, 'manual');
+  if (room.status !== 'archived' && !archiveWorld(code, 'manual')) {
+    return res.status(500).json({ ok: false, error: 'Gagal menulis arsip — dunia tidak diubah.' });
+  }
   res.json({ ok: true, meta: worldMeta(room), archivedCount: n });
 });
-app.post('/api/worlds/:code/restore', (req, res) => {
+app.post('/api/worlds/:code/restore', async (req, res) => {
   const code = String(req.params.code || '').toUpperCase().slice(0, 24);
   const room = rooms.get(code);
   if (!room || room.status !== 'archived') return res.status(404).json({ ok: false, error: 'Arsip tidak ditemukan.' });
-  try {
-    const a = JSON.parse(fs.readFileSync(path.join(archiveDir(), code + '.json'), 'utf8'));
-    room.items = Array.isArray(a.items) ? a.items : [];
-  } catch (e) { room.items = []; }
+  let items = null;
+  // ARCHIVE_DIR dulu; data/archive sebagai cadangan (arsip sebelum ARCHIVE_DIR di-set)
+  for (const dir of [archiveDir(), path.join(DATA_DIR, 'archive')]) {
+    try {
+      const a = JSON.parse(fs.readFileSync(path.join(dir, code + '.json'), 'utf8'));
+      items = Array.isArray(a.items) ? a.items : [];
+      break;
+    } catch (e) {}
+  }
+  // Berkas arsip hilang bersama disk host → ambil salinannya dari database
+  if (!items) {
+    try {
+      const a = await dbm.get('archive/' + code + '.json');
+      if (a) items = Array.isArray(a.items) ? a.items : [];
+    } catch (e) {}
+  }
+  room.items = items || [];
   room.status = 'idle';
   room.lastActivityAt = new Date().toISOString();
   schedulePersist();
@@ -1028,18 +1171,23 @@ function archiveDir() {
 }
 function archiveWorld(code, why) {
   const room = rooms.get(code);
-  if (!room || room.status === 'archived') return;
-  archiveDir(); // pastikan direktori ada SEBELUM tulis file
-  dataWrite(path.join('archive', code + '.json'), { meta: worldMeta(room), items: room.items || [], archivedAt: new Date().toISOString(), why: why });
+  if (!room || room.status === 'archived') return false;
+  // Tulis langsung ke direktori arsip (archiveDir() memastikan direktorinya
+  // ada). Isi dunia baru dikosongkan SETELAH berkas arsip benar-benar
+  // tertulis — kalau gagal, dunia dibiarkan apa adanya.
   try {
-    const src = path.join(DATA_DIR, 'archive', code + '.json');
-    const dst = path.join(archiveDir(), code + '.json');
-    if (src !== dst) fs.copyFileSync(src, dst);
-  } catch (e) {}
+    const doc = { meta: worldMeta(room), items: room.items || [], archivedAt: new Date().toISOString(), why: why };
+    fs.writeFileSync(path.join(archiveDir(), code + '.json'), JSON.stringify(doc));
+    dbm.put('archive/' + code + '.json', doc);
+  } catch (e) {
+    console.error('[ARCHIVE] gagal menulis arsip', code, '-', e.message);
+    return false;
+  }
   room.items = [];
   room.status = 'archived';
   schedulePersist();
   notify('archived', code, 'Dunia "' + code + '" diarsip (' + why + '). Klik Restore untuk membuka lagi.');
+  return true;
 }
 // Notifikasi in-app (banner H-3/H-7 + arsip)
 app.get('/api/notifications', (req, res) => {
@@ -1136,6 +1284,20 @@ function oidcVerify(token) {
     return payload;
   } catch (e) { return null; }
 }
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+// redirect_uri hanya boleh kembali ke host ini sendiri → jadi path relatif
+// (selain itu jatuh ke '/'), supaya login mock tidak bisa dipakai open redirect.
+function oidcRedirectPath(req, uri) {
+  try {
+    const host = req.get('host');
+    const u = new URL(String(uri || '/'), 'http://' + host);
+    if (u.host !== host) return '/';
+    return '/' + u.pathname.replace(/^\/+/, '') + u.search;
+  } catch (e) { return '/'; }
+}
 if (MOCK_OIDC) {
   app.get('/.well-known/openid-configuration', (req, res) => {
     const base = req.protocol + '://' + req.get('host');
@@ -1157,8 +1319,8 @@ if (MOCK_OIDC) {
     const q = req.query;
     res.send('<!DOCTYPE html><html><head><meta charset="utf8"><title>Mock SSO</title></head><body style="font-family:sans-serif;max-width:420px;margin:40px auto">' +
       '<h2>Mock SSO SIAKAD (dev)</h2><form method="POST" action="/oidc/login">' +
-      '<input type="hidden" name="redirect_uri" value="' + String(q.redirect_uri || '').slice(0, 300) + '">' +
-      '<input type="hidden" name="state" value="' + String(q.state || '').slice(0, 100) + '">' +
+      '<input type="hidden" name="redirect_uri" value="' + escHtml(String(q.redirect_uri || '').slice(0, 300)) + '">' +
+      '<input type="hidden" name="state" value="' + escHtml(String(q.state || '').slice(0, 100)) + '">' +
       '<p>Nama <input name="name" value="Guru Demo"></p>' +
       '<p>Role <select name="role"><option value="guru">guru</option><option value="siswa">siswa</option></select></p>' +
       '<p>Kelas <input name="classId" value="8A-IPA-2026"></p>' +
@@ -1167,14 +1329,15 @@ if (MOCK_OIDC) {
   app.post('/oidc/login', (req, res) => {
     const b = req.body || {};
     const user = {
-      userId: 'SIAKAD-' + Date.now().toString(36).toUpperCase(),
+      userId: 'SIAKAD-' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
       name: sanitizeName(b.name || 'Demo'), role: b.role === 'siswa' ? 'siswa' : 'guru',
       classId: String(b.classId || '8A-IPA-2026').slice(0, 24)
     };
     const code = 'OIDC-' + crypto.randomBytes(12).toString('hex');
     oidcCodes.set(code, { user: user, exp: Date.now() + 10 * 60 * 1000 });
-    const sep = String(b.redirect_uri || '/').includes('?') ? '&' : '?';
-    res.redirect(String(b.redirect_uri || '/') + sep + 'code=' + code + (b.state ? '&state=' + encodeURIComponent(b.state) : ''));
+    const back = oidcRedirectPath(req, b.redirect_uri);
+    const sep = back.includes('?') ? '&' : '?';
+    res.redirect(back + sep + 'code=' + code + (b.state ? '&state=' + encodeURIComponent(b.state) : ''));
   });
   app.post('/oidc/token', (req, res) => {
     const b = req.body || {};
@@ -1195,25 +1358,38 @@ if (MOCK_OIDC) {
 // =============================================================
 // SOCKET HANDLERS
 // =============================================================
+// Payload & ack datang dari client → jangan dipercaya bentuknya. Exception di
+// handler socket tidak ditangkap Socket.IO: satu event rusak = proses mati.
+function ack(cb) { return typeof cb === 'function' ? cb : () => {}; }
+function obj(data) { return data && typeof data === 'object' ? data : {}; }
+
 io.on('connection', (socket) => {
   console.log('[+]', socket.id);
   socket.data.roomCode = null;
+  // Sesi yang dipulihkan (connectionStateRecovery) ikut memulihkan langganan
+  // room, padahal presensinya sudah dihapus saat putus → lepas dulu; client
+  // join ulang sendiri (mpAutoRejoin).
+  if (socket.recovered) {
+    for (const r of socket.rooms) { if (r !== socket.id) socket.leave(r); }
+  }
 
   // ---------- CREATE ----------
   socket.on('room:create', (data, cb) => {
+    cb = ack(cb); data = obj(data);
     try {
       let isClass = false, code = '';
-      const norm = normalizeRoomCode(data && data.code);
+      const norm = normalizeRoomCode(data.code);
       if (norm.code) { code = norm.code; isClass = norm.isClass; }
       else { do { code = makeRoomCode(); } while (rooms.has(code)); }
-      if (rooms.has(code)) return cb && cb({ ok: false, error: 'Kode sudah dipakai, coba lagi.' });
+      if (rooms.has(code)) return cb({ ok: false, error: 'Kode sudah dipakai, coba lagi.' });
 
+      leaveRoom(socket);
       const max = Math.max(2, Math.min(16, parseInt(data.maxPlayers, 10) || 6));
       const room = {
         code: code, isClass: isClass, locked: false,
         maxPlayers: isClass ? Math.max(max, 32) : max,
         hostUid: socket.id,
-        items: Array.isArray(data.items) ? data.items : [],
+        items: Array.isArray(data.items) ? data.items.filter(validItem) : [],
         itemsUpdatedAt: Date.now(),
         itemsUpdatedBy: socket.id,
         createdAt: new Date().toISOString(),
@@ -1224,71 +1400,78 @@ io.on('connection', (socket) => {
       };
       rooms.set(code, room);
       schedulePersist();
-      joinRoom(socket, room, data.name, true, data.avatar);
+      joinRoom(socket, room, data.name, true, data.avatar, data.role);
       console.log('[ROOM+]', code, 'by', socket.id);
-      cb && cb({ ok: true, code: code, isClass: isClass });
+      cb({ ok: true, code: code, isClass: isClass });
     } catch (e) {
-      cb && cb({ ok: false, error: e.message });
+      cb({ ok: false, error: e.message });
     }
   });
 
   // ---------- JOIN (autentikasi kode) ----------
   socket.on('room:join', (data, cb) => {
+    cb = ack(cb); data = obj(data);
     try {
       // Terima format display "LAB-XXXX-XX" (hasil copy tombol Salin) —
       // buang prefix LAB seperti normalizeJoinCode di client, lalu ambil kode.
-      let raw = String((data && data.code) || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      let raw = String(data.code || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
       if (/^LAB[A-Z0-9-]/.test(raw)) raw = raw.slice(3).replace(/^-/, '');
       // Kode acak 6 char: ambil tepat 6; kode kelas: pakai utuh (maks 24)
       let norm = normalizeRoomCode(raw);
       if (!norm.code && raw.length > 6) norm = normalizeRoomCode(raw.slice(0, 6));
       const room = rooms.get(norm.code);
-      if (!room) return cb && cb({ ok: false, error: 'Room "' + norm.code + '" tidak ditemukan.' });
-      if (room.locked) return cb && cb({ ok: false, error: 'Room dikunci host (403).', code: 403 });
+      if (!room) return cb({ ok: false, error: 'Room "' + norm.code + '" tidak ditemukan.' });
+      // Kunci hanya berlaku selama masih ada sesi; dunia kosong boleh dimasuki
+      // (joinRoom melepas kuncinya; peserta pertama jadi host KECUALI di
+      // room kelas tanpa klaim guru — menunggu guru masuk).
+      if (room.locked && room.peers.size > 0) return cb({ ok: false, error: 'Room dikunci host (403).', code: 403 });
       if (room.peers.size >= room.maxPlayers) {
-        return cb && cb({ ok: false, error: 'Room penuh (' + room.peers.size + '/' + room.maxPlayers + ').' });
+        return cb({ ok: false, error: 'Room penuh (' + room.peers.size + '/' + room.maxPlayers + ').' });
       }
-      joinRoom(socket, room, data.name, false, data.avatar);
+      leaveRoom(socket);
+      joinRoom(socket, room, data.name, false, data.avatar, data.role);
       console.log('[ROOM~]', norm.code, 'joined by', socket.id, '(' + room.peers.size + '/' + room.maxPlayers + ')');
-      cb && cb({ ok: true, code: norm.code, isClass: !!room.isClass });
+      cb({ ok: true, code: norm.code, isClass: !!room.isClass });
     } catch (e) {
-      cb && cb({ ok: false, error: e.message });
+      cb({ ok: false, error: e.message });
     }
   });
 
     // ---------- PERAN PESERTA (v5.1 FR-34: host/editor/viewer, host only) ----------
   socket.on('participant:role', (data, cb) => {
+    cb = ack(cb); data = obj(data);
     try {
       const room = rooms.get(socket.data.roomCode);
-      if (!room) return cb && cb({ ok: false, error: 'Belum join room.' });
+      if (!room) return cb({ ok: false, error: 'Belum join room.' });
       const me = room.peers.get(socket.id);
-      if (!me || !me.isHost) return cb && cb({ ok: false, error: 'Hanya host yang boleh ubah peran.' });
-      const target = room.peers.get(data && data.to);
-      if (!target) return cb && cb({ ok: false, error: 'Peserta tidak ditemukan.' });
-      const role = String((data && data.role) || '');
-      if (['editor', 'viewer'].indexOf(role) < 0) return cb && cb({ ok: false, error: 'Peran harus editor/viewer.' });
-      if (target.isHost) return cb && cb({ ok: false, error: 'Host tidak bisa diturunkan.' });
+      if (!me || !me.isHost) return cb({ ok: false, error: 'Hanya host yang boleh ubah peran.' });
+      const target = room.peers.get(data.to);
+      if (!target) return cb({ ok: false, error: 'Peserta tidak ditemukan.' });
+      const role = String(data.role || '');
+      if (['editor', 'viewer'].indexOf(role) < 0) return cb({ ok: false, error: 'Peran harus editor/viewer.' });
+      if (target.isHost) return cb({ ok: false, error: 'Host tidak bisa diturunkan.' });
       target.role = role;
       io.to(room.code).emit('peer:role', { peer: data.to, role: role });
-      cb && cb({ ok: true, role: role });
+      cb({ ok: true, role: role });
     } catch (e) {
-      cb && cb({ ok: false, error: e.message });
+      cb({ ok: false, error: e.message });
     }
   });
 
   // ---------- ROOM LOCK (guru/host, PRD v2 FR-07) ----------
   socket.on('room:lock', (data, cb) => {
+    cb = ack(cb); data = obj(data);
     try {
       const room = rooms.get(socket.data.roomCode);
-      if (!room) return cb && cb({ ok: false, error: 'Belum join room.' });
+      if (!room) return cb({ ok: false, error: 'Belum join room.' });
       const me = room.peers.get(socket.id);
-      if (!me || !me.isHost) return cb && cb({ ok: false, error: 'Hanya host yang boleh mengunci.' });
-      room.locked = !!(data && data.locked);
+      if (!me || !me.isHost) return cb({ ok: false, error: 'Hanya host yang boleh mengunci.' });
+      room.locked = !!data.locked;
       schedulePersist();
       io.to(room.code).emit('room:locked', { locked: room.locked });
-      cb && cb({ ok: true, locked: room.locked });
+      cb({ ok: true, locked: room.locked });
     } catch (e) {
-      cb && cb({ ok: false, error: e.message });
+      cb({ ok: false, error: e.message });
     }
   });
 
@@ -1298,6 +1481,7 @@ io.on('connection', (socket) => {
     if (!room) return;
     const p = room.peers.get(socket.id);
     if (!p) return;
+    data = obj(data);
     if (typeof data.x === 'number') p.x = data.x;
     if (typeof data.y === 'number') p.y = data.y;
     if (typeof data.z === 'number') p.z = data.z;
@@ -1317,24 +1501,26 @@ io.on('connection', (socket) => {
   socket.on('world:update', (data) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
-    if (!Array.isArray(data.items)) return;
+    if (!data || !Array.isArray(data.items)) return;
+    const sender = room.peers.get(socket.id);
+    if (!sender) return; // bukan peserta room ini
     // Sprint 2: dunia read-only/archived menolak edit
     // v5.1 FR-34: viewer read-only
     if (room.status === 'read-only' || room.status === 'archived') {
       socket.emit('world:denied', { reason: room.status, code: room.code });
       return;
     }
-    const sender = room.peers.get(socket.id);
-    if (sender && sender.role === 'viewer') {
+    if (sender.role === 'viewer') {
       socket.emit('world:denied', { reason: 'viewer', code: room.code });
       return;
     }
-    room.items = data.items;
+    // Item rusak (tanpa itemKey/pos) dibuang: kalau ikut tersiar & tersimpan,
+    // client lain gagal memuat dunia ini.
+    room.items = data.items.filter(validItem);
     room.itemsUpdatedAt = Date.now();
     room.itemsUpdatedBy = socket.id;
     room.lastActivityAt = new Date().toISOString();
-    const me = room.peers.get(socket.id);
-    if (me) room.lastActivityBy = me.username;
+    room.lastActivityBy = sender.username;
     schedulePersist();
     socket.to(room.code).emit('world:update', {
       items: room.items,
@@ -1391,41 +1577,58 @@ io.on('connection', (socket) => {
   // ---------- DISCONNECT ----------
   socket.on('disconnect', () => {
     console.log('[-]', socket.id);
-    const room = rooms.get(socket.data.roomCode);
-    if (!room) return;
-
-    const wasHost = room.peers.get(socket.id)?.isHost;
-    room.peers.delete(socket.id);
-    socket.to(room.code).emit('peer:leave', { peer: socket.id });
-    // PRD v1.0 §6.2 — alias player:leave
-    socket.to(room.code).emit('player:leave', { id: socket.id });
-
-    if (room.peers.size === 0) {
-      // PRD v5.2 FR-43: dunia TETAP ADA saat 0 peserta (idle), tidak dihapus.
-      // read-only/archived TIDAK diturunkan ke idle oleh disconnect.
-      if (!room.status || room.status === 'active') room.status = 'idle';
-      schedulePersist();
-      console.log('[ROOM~]', room.code, '(' + (room.status || 'idle') + ', persisted)');
-    } else if (wasHost) {
-      const [nextSid, nextP] = room.peers.entries().next().value;
-      nextP.isHost = true;
-      room.hostUid = nextSid;
-      io.to(room.code).emit('room:host', { peer: nextSid });
-      console.log('[ROOM*]', room.code, 'host →', nextSid);
-    }
+    leaveRoom(socket);
   });
 });
 
 // =============================================================
 // START
 // =============================================================
+// Deploy/restart mengirim SIGTERM: tulis dulu perubahan yang masih menunggu
+// debounce 2 dtk, kalau tidak editan terakhir hilang.
+function shutdown() {
+  try { persistAll(); } catch (e) {}
+  // Tunggu tulis database yang masih antre (maks 5 dtk), baru keluar
+  const done = () => process.exit(0);
+  setTimeout(done, 5000).unref();
+  dbm.flush().then(done, done);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+// Boot: bila DATABASE_URL di-set, isi ulang berkas state dari database
+// (disk host bisa kosong setelah restart), baru muat ke memori. Database
+// bermasalah → tetap jalan dengan berkas lokal, jangan gagal start.
+async function bootRestore() {
+  if (dbm.mode === 'postgres') {
+    try {
+      await dbm.init();
+      let n = 0;
+      for (const file of DB_MIRROR) {
+        const doc = await dbm.get(file);
+        if (!doc) continue;
+        fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(doc));
+        n++;
+      }
+      console.log('[DB] postgres siap — ' + n + '/' + DB_MIRROR.length + ' berkas state dipulihkan dari database.');
+    } catch (e) {
+      console.error('[DB] gagal memulihkan dari database, pakai berkas lokal:', e.message);
+    }
+  }
+  restorePersisted();
+  // Data lokal yang belum ada di database (pertama kali pakai DATABASE_URL) ikut terkirim
+  if (dbm.mode === 'postgres' && (rooms.size || layouts.size)) persistAll();
+}
+
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('');
-  console.log('  ╔══════════════════════════════════════════════╗');
-  console.log('  ║  LabIPA 3D Studio · Multiplayer Server       ║');
-  console.log('  ║  Listening on port ' + String(PORT).padEnd(24) + ' ║');
-  console.log('  ╚══════════════════════════════════════════════╝');
-  console.log('  DB mode: ' + dbm.mode + ' (set DATABASE_URL/REDIS_URL + npm i pg redis utk produksi)');
-  console.log('');
+bootRestore().catch((e) => console.error('[BOOT]', e.message)).then(() => {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log('');
+    console.log('  ╔══════════════════════════════════════════════╗');
+    console.log('  ║  LabIPA 3D Studio · Multiplayer Server       ║');
+    console.log('  ║  Listening on port ' + String(PORT).padEnd(24) + ' ║');
+    console.log('  ╚══════════════════════════════════════════════╝');
+    console.log('  DB mode: ' + dbm.mode + (dbm.mode === 'file' ? ' (set DATABASE_URL agar data bertahan di host tanpa disk)' : ''));
+    console.log('');
+  });
 });

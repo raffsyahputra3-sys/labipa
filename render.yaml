@@ -15,4 +15,15 @@ services:
         value: true
       - key: GATE_REQUIRED
         value: true
+      # Paket gratis tidak punya disk tetap → state dunia disimpan di Postgres
+      # luar (Neon/Supabase). Isi nilainya di dashboard Render (sync: false =
+      # rahasia, tidak ikut repo).
+      - key: DATABASE_URL
+        sync: false
+      # Tanpa ini kunci master dibuat acak tiap server bangun (lihat log).
+      - key: MASTER_KEY
+        sync: false
+      # Agar token gate tetap sah setelah server tidur/bangun.
+      - key: GATE_JWT_SECRET
+        generateValue: true
     autoDeploy: true

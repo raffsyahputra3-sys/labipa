@@ -1479,6 +1479,11 @@ div[data-mppanel="solo"] .cover-cta{
   <button class="tb-btn" id="btnVoice" title="Voice chat (mic)">
     <span class="ico">🎤</span><span class="lbl-txt">Voice</span><span id="voiceQ" title="Kualitas suara"></span>
   </button>
+  <!-- Kode ruangan: SATU tempat. Klik kode = salin; 👥 = panel pemain. -->
+  <span id="mpChip" style="display:none">
+    <button class="tb-btn" id="mpCopyCode" type="button" title="Klik untuk salin kode ruangan"><span class="ico">🔑</span><span class="lbl-txt" id="mpRoomCode" style="font-family:var(--mono);font-weight:700;letter-spacing:.04em">——————</span></button>
+    <button class="tb-btn icon-only" id="mpChipToggle" type="button" title="Pemain, kunci, keluar room"><span class="ico">👥</span></button>
+  </span>
   <button class="tb-btn" id="btnLiveBadge" title="Mode Live Edit (guru mengajar)" style="display:none">
     <span class="ico">🔴</span><span class="lbl-txt">LIVE</span><span id="liveBadge"></span>
   </button>
@@ -1518,10 +1523,6 @@ div[data-mppanel="solo"] .cover-cta{
     </div>
 
     <div id="mpPanel">
-      <div class="mp-head">
-        <span class="code" id="mpRoomCode">——————</span>
-        <button id="mpCopyCode" title="Salin kode room" type="button">⧉ salin</button>
-      </div>
       <div class="mp-sect">PEMAIN AKTIF</div>
       <div id="mpPlayers"></div>
       <div class="mp-nameRow"><button id="mpRenameBtn" type="button" title="Ubah nama tampilan">✎ nama</button><button id="mpLockBtn" type="button" title="Kunci room (host)">🔒 kunci</button></div>
@@ -1988,7 +1989,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=1.05;
+renderer.toneMappingExposure=0.8;
 renderer.outputEncoding=THREE.sRGBEncoding;
 document.getElementById('viewWrap').appendChild(renderer.domElement);
 
@@ -2002,10 +2003,10 @@ sun.shadow.camera.top=50;sun.shadow.camera.bottom=-50;
 sun.shadow.camera.near=1;sun.shadow.camera.far=170;
 sun.shadow.bias=-0.0004;sun.shadow.normalBias=0.02;scene.add(sun);
 // LAYER 2 FILL (pantulan langit, cool)
-const fill=new THREE.DirectionalLight(0xB8D4E8,0.6);
+const fill=new THREE.DirectionalLight(0xB8D4E8,0.3);
 fill.position.set(-30,20,-20);scene.add(fill);
 // LAYER 3 RIM (backlight hangat, pemisah siluet)
-const rim=new THREE.DirectionalLight(0xFFD8A0,0.4);
+const rim=new THREE.DirectionalLight(0xFFD8A0,0.22);
 rim.position.set(10,15,-40);scene.add(rim);
 // LAYER 4 AMBIENT (hemisphere tanah-langit)
 const hemi=new THREE.HemisphereLight(0xD6E2E5,0x8A7B5C,0.55);scene.add(hemi);
@@ -2330,6 +2331,7 @@ function addFloor(w,d,x,z,color,variant){
       map:PROC.tile(0xCFC5AB,0x8f866e,5,60,Math.max(1,Math.round(w/3.6)),Math.max(1,Math.round(d/3.6)))});
   }
   if(mat.map)mat.map.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  mat.envMapIntensity=0.45; // bidang luas & terang: IBL penuh bikin lantai silau
   if(variant!=='prep'&&variant!=='stor')floorTexUpgrade(mat,w,d);
   const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),mat);
   f.position.set(x,-0.05,z);f.receiveShadow=true;scene.add(f);
@@ -2351,6 +2353,7 @@ const wallMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.92,side
   map:PROC.concrete(0xF2EDDD,63,6),bumpMap:PROC.concrete(0x808080,63,6),bumpScale:0.01});
 const wallAcc=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9,side:THREE.DoubleSide,
   map:PROC.concrete(0xDCE5DD,64,6)});
+wallMat.envMapIntensity=0.4;wallAcc.envMapIntensity=0.4; // dinding putih: redam IBL agar tidak pucat
 const doorMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.7,metalness:0.0,
   map:PROC.wood(0x6E4B2E,0x3A2617,65,1,2)});
 const doorGlass=new THREE.MeshPhysicalMaterial({color:0xCFE0E8,transparent:true,opacity:0.42,roughness:0.06,metalness:0.1,transmission:0.6,ior:1.5});
@@ -2754,9 +2757,80 @@ const materials={
   liquidYellow:new THREE.MeshPhysicalMaterial({color:0xeab308,transmission:0.9,ior:1.33,transparent:true,opacity:0.9})
 };
 
+// Angkat realisme SEKALI untuk semua material prosedural di atas: pantulan
+// environment (HDR studio) per keluarga bahan + anisotropy texture (grain
+// tetap tajam dari sudut miring). Metal mengkilap, kayu/kain kalem. Aman
+// tanpa HDR (envMapIntensity diam saja bila scene.environment belum termuat).
+(function(){
+  var aniso=(renderer.capabilities&&renderer.capabilities.getMaxAnisotropy)?renderer.capabilities.getMaxAnisotropy():1;
+  var env={chrome:1.35,brushedSteel:1.15,brass:1.3,castIron:0.7,epoxyTableTop:1.05,
+    plasticWhite:0.55,plasticBlack:0.5,plasticYellow:0.5,plasticGreen:0.5,plasticRed:0.5,
+    woodDark:0.7,woodLight:0.7,fabricNavy:0.4,fabricGreen:0.4,rubberDark:0.3,
+    glassClear:1.4,glassFrosted:1.1};
+  Object.keys(materials).forEach(function(k){
+    var m=materials[k];
+    if('envMapIntensity' in m)m.envMapIntensity=env[k]!==undefined?env[k]:1.0;
+    if(m.map)m.map.anisotropy=aniso;
+    if(m.bumpMap)m.bumpMap.anisotropy=aniso;
+    m.needsUpdate=true;
+  });
+})();
+
 
 // ============== MAKERS ==============
 function simpleBoxMat(c,r){return new THREE.MeshStandardMaterial({color:c,roughness:r});}
+// LCD kecil emissive (font 7-segmen semu) untuk display alat — murah, 1 canvas.
+function makeLCDLabel(text,w,h){
+  var cv=document.createElement('canvas');cv.width=128;cv.height=32;
+  var cx=cv.getContext('2d');
+  cx.fillStyle='#04120f';cx.fillRect(0,0,128,32);
+  cx.fillStyle='#39ff9d';cx.font='bold 22px "Courier New",monospace';
+  cx.textAlign='right';cx.textBaseline='middle';
+  cx.fillText(String(text),120,18);
+  var tex=new THREE.CanvasTexture(cv);tex.anisotropy=4;
+  return new THREE.MeshStandardMaterial({map:tex,emissive:0x39ff9d,emissiveMap:tex,emissiveIntensity:0.9,roughness:0.3});
+}
+
+// =============================================================
+// FR-4: CAHAYA SEMU (tanpa PointLight per item).
+// Tiap PointLight tambahan memaksa three.js r128 mengompilasi ulang SEMUA
+// shader (jumlah lampu = define shader) → tersendat tiap taruh/hapus lampu
+// (termasuk ghost) dan FPS jatuh di laptop sekolah. Lampu/bunsen kini hanya
+// emissive + sprite glow (additive, tanpa cahaya nyata). Slider lampu ikut
+// mengatur intensitasnya via registry LAMP_FX.
+// =============================================================
+var LAMP_FX=[];
+var LAMP_GLOW_TEX=null;
+var LAMP_LEVEL=1; // faktor slider terakhir (0–2), dipakai flicker bunsen
+function lampGlowTexture(){
+  if(LAMP_GLOW_TEX)return LAMP_GLOW_TEX;
+  var cv=document.createElement('canvas');cv.width=64;cv.height=64;
+  var cx=cv.getContext('2d');
+  var gr=cx.createRadialGradient(32,32,2,32,32,31);
+  gr.addColorStop(0,'rgba(255,255,255,1)');
+  gr.addColorStop(0.35,'rgba(255,255,255,0.45)');
+  gr.addColorStop(1,'rgba(255,255,255,0)');
+  cx.fillStyle=gr;cx.fillRect(0,0,64,64);
+  LAMP_GLOW_TEX=new THREE.CanvasTexture(cv);
+  return LAMP_GLOW_TEX;
+}
+// Daftarkan material emissive milik grup agar slider lampu bisa mengaturnya.
+function lampEmissive(group,mat,base){
+  try{ LAMP_FX.push({root:group,mat:mat,base:(base==null?1:base)}); }catch(e){}
+  return mat;
+}
+// Sprite glow additive di posisi lokal (x,y,z): skala s, warna hex, opasitas o.
+function lampGlow(group,x,y,z,s,hex,o){
+  try{
+    const m=new THREE.SpriteMaterial({map:lampGlowTexture(),color:hex||0xFFF0C8,
+      transparent:true,opacity:(o==null?0.5:o),blending:THREE.AdditiveBlending,depthWrite:false});
+    const spr=new THREE.Sprite(m);
+    spr.position.set(x,y,z);spr.scale.set(s,s,1);
+    group.add(spr);
+    LAMP_FX.push({root:group,spr:spr,base:(o==null?0.5:o)});
+    return spr;
+  }catch(e){ return null; }
+}
 
 const MAKERS={
   'table':{label:'Meja praktikum',type:'furniture',aabb:{w:1.8,h:0.9,d:0.9},make:function(){
@@ -3031,9 +3105,11 @@ const MAKERS={
     // Bingkai tutup
     const lid=new THREE.Mesh(new THREE.BoxGeometry(0.33,0.43,0.012),materials.plasticWhite);
     lid.position.set(0,0.225,0.058);g.add(lid);
-    const vCross=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.006),materials.plasticRed);
+    // Palang merah sedikit emissive → terbaca sebagai simbol medis, bukan flat
+    const crossMat=new THREE.MeshStandardMaterial({color:0xdc2626,emissive:0xdc2626,emissiveIntensity:0.18,roughness:0.4});
+    const vCross=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.006),crossMat);
     vCross.position.set(0,0.225,0.066);g.add(vCross);
-    const hCross=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.04,0.006),materials.plasticRed);
+    const hCross=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.04,0.006),crossMat);
     hCross.position.set(0,0.225,0.066);g.add(hCross);
     // Engsel kiri (2 silinder kecil)
     [0.12,0.33].forEach(function(y){
@@ -3112,10 +3188,14 @@ const MAKERS={
     const g=new THREE.Group();
     const base=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.02,0.6),materials.plasticWhite);
     base.position.y=0.04; base.castShadow=true; g.add(base);
-    const panel=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.015,0.5),new THREE.MeshStandardMaterial({color:0xFFF8DC,emissive:0xFFF0A0,emissiveIntensity:0.6,roughness:0.4}));
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.015,0.5),new THREE.MeshStandardMaterial({color:0xFFF8DC,emissive:0xFFF0A0,emissiveIntensity:1.1,roughness:0.4}));
     panel.position.y=0.015; g.add(panel);
     const frame=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.015,0.62),materials.brushedSteel);
     frame.position.y=0.045; g.add(frame);
+    // FR-4: cahaya semu — panel emissive + glow (tanpa PointLight agar
+    // shader tidak dikompilasi ulang tiap tambah/hapus lampu).
+    lampEmissive(g,panel.material,1.1);
+    lampGlow(g,0,-0.15,0,1.6,0xFFF0C8,0.5);
     return g;
   }},
 
@@ -3128,7 +3208,9 @@ const MAKERS={
     [-0.03,0.03].forEach(function(z){
       const tube=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,1.15,16),new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xffffff,emissiveIntensity:1.5}));
       tube.rotation.z=Math.PI/2;tube.position.set(0,-0.01,z);g.add(tube);
+      lampEmissive(g,tube.material,1.5); // FR-4: ikut slider lampu
     });
+    lampGlow(g,0,-0.12,0,1.8,0xFFFFFF,0.4); // FR-4: cahaya semu
     return g;
   }},
   'lamp-led':{label:'LED Panel Plafon',type:'furniture',aabb:{w:0.6,h:0.05,d:0.6},make:function(){
@@ -3136,6 +3218,9 @@ const MAKERS={
     const frame=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.04,0.6),materials.brushedSteel);g.add(frame);
     const panel=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.01,0.55),new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xfffdf5,emissiveIntensity:2.0}));
     panel.position.y=-0.02;g.add(panel);
+    // FR-4: cahaya semu (tanpa PointLight) — lihat lamp-ceiling.
+    lampEmissive(g,panel.material,2.0);
+    lampGlow(g,0,-0.18,0,1.6,0xFCFBFF,0.5);
     return g;
   }},
   'bunsen':{label:'Pembakar Bunsen',type:'tool',aabb:{w:0.13,h:0.3,d:0.13},make:function(){
@@ -3144,8 +3229,24 @@ const MAKERS={
     base.position.y=0.01;g.add(base);
     const tube=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.12,16),materials.brass);
     tube.position.y=0.08;g.add(tube);
-    const flame=new THREE.Mesh(new THREE.ConeGeometry(0.018,0.1,16),new THREE.MeshBasicMaterial({color:0x38bdf8,transparent:true,opacity:0.8}));
-    flame.position.y=0.19;g.add(flame);
+    // Api: kerucut luar biru transparan + inti dalam biru-putih lebih panas,
+    // keduanya additive agar "menyala". Cahaya biru kecil dari nyala.
+    const flame=new THREE.Mesh(new THREE.ConeGeometry(0.02,0.11,18),
+      new THREE.MeshBasicMaterial({color:0x4aa3ff,transparent:true,opacity:0.55,blending:THREE.AdditiveBlending,depthWrite:false}));
+    flame.position.y=0.195;g.add(flame);
+    const core=new THREE.Mesh(new THREE.ConeGeometry(0.009,0.07,14),
+      new THREE.MeshBasicMaterial({color:0xcfe8ff,transparent:true,opacity:0.9,blending:THREE.AdditiveBlending,depthWrite:false}));
+    core.position.y=0.18;g.add(core);
+    // FR-4: cahaya semu — glow sprite biru (tanpa PointLight).
+    const glow=lampGlow(g,0,0.21,0,0.35,0x3b82f6,0.55);
+    // Flicker lewat onBeforeRender → ikut hidup/mati bersama mesh (tanpa loop
+    // global, tanpa kebocoran saat item dihapus).
+    flame.onBeforeRender=function(){
+      var t=performance.now()*0.001;
+      var f=0.9+Math.sin(t*22)*0.07+Math.sin(t*41)*0.04;
+      flame.scale.set(1,f,1);core.scale.set(1,f*0.92+0.05,1);
+      try{ if(glow&&glow.material)glow.material.opacity=Math.min(1,0.55*LAMP_LEVEL*(0.4*f+0.6)); }catch(e){}
+    };
     return g;
   }},
   'flask':{label:'Labu Erlenmeyer',type:'tool',aabb:{w:0.12,h:0.18,d:0.12},make:function(){
@@ -3164,8 +3265,11 @@ const MAKERS={
     body.position.y=0.03;g.add(body);
     const pan=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.005,32),materials.chrome);
     pan.position.y=0.07;g.add(pan);
-    const display=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.025,0.002),new THREE.MeshStandardMaterial({color:0x000000,emissive:0x38bdf8,emissiveIntensity:0.6}));
+    const display=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.025,0.002),makeLCDLabel('0.00 g'));
     display.position.set(0,0.035,0.136);g.add(display);
+    // Tombol tare kecil di depan
+    const tare=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.004,16),materials.plasticBlack);
+    tare.rotation.x=Math.PI/2;tare.position.set(0.07,0.03,0.14);g.add(tare);
     return g;
   }},
   'stand':{label:'Statif, Klem & Cincin',type:'tool',aabb:{w:0.18,h:0.65,d:0.25},make:function(){
@@ -3736,6 +3840,8 @@ function renderInspector(){
   body.querySelectorAll('button[data-act]').forEach(function(btn){
     btn.addEventListener('click',function(){
       const a=btn.dataset.act;
+      // Tab kedua menonton (fokus kamera boleh, mutasi tidak)
+      if(a!=='focus'&&mpBlockWatchTab())return;
       if(a==='rotL'){b.mesh.rotation.y+=Math.PI/12;renderInspector();}
       if(a==='rotR'){b.mesh.rotation.y-=Math.PI/12;renderInspector();}
       if(a==='unstick'){PHYS.unstick(b);showToast('Dilepas: '+b.label);}
@@ -3872,10 +3978,10 @@ function setGhostColor(hex){
   }
 }
 function startPlacement(itemKey){
+  // Tab kedua menonton: edit di tab utama
+  if(mpBlockWatchTab())return;
   // PRD v2 FR-08: siswa penonton Live Edit = read-only
   try{if(window.LabIPA&&window.LabIPA.isViewer&&window.LabIPA.isViewer()){showToast('Mode menonton — Live Edit guru sedang berjalan');return;}}catch(e){}
-  // Sprint 5 FR-42: tab kedua = read-only
-  try{if(window.LABIPA_SECOND_TAB){showToast('Tab kedua mode menonton — edit di tab utama');return;}}catch(e){}
   // v5.1 FR-34: peran viewer = read-only
   try{if(typeof MP!=='undefined'&&MP.myRole==='viewer'){showToast('Peranmu viewer — read-only');return;}}catch(e){}
   if(PLACEMENT.active)cancelPlacement();
@@ -3966,6 +4072,7 @@ function updatePlacement(){
 }
 function confirmPlacement(){
   if(!PLACEMENT.active||!PLACEMENT.ghost)return;
+  if(mpBlockWatchTab()){cancelPlacement();return;}
   const def=MAKERS[PLACEMENT.item];
   const sup=PLACEMENT.support;
   const pos=PLACEMENT.ghost.position.clone();
@@ -4012,6 +4119,7 @@ function cancelPlacement(){
 }
 function rotatePlacement(d){if(!PLACEMENT.active)return;PLACEMENT.rotY+=d;updateRotDisplay();}
 function removeSelectedOrCrosshair(){
+  if(mpBlockWatchTab())return;
   if(selectedBody){
     scene.remove(selectedBody.mesh);
     const i=PHYS.bodies.indexOf(selectedBody);if(i>=0)PHYS.bodies.splice(i,1);
@@ -4145,24 +4253,28 @@ function mpPostStateToParent(){
     }
     document.getElementById('btnMpCreate').disabled=false;
     document.getElementById('btnMpJoin').disabled=false;
-  });
-
-  // Reconnect otomatis: gabung ulang room terakhir (create/join) + voice:start ulang.
-  // Tanpa ini user harus reload halaman tiap koneksi putus sesaat.
-  MP.socket.on('reconnect',(n)=>{
-    try{const nb=document.getElementById('netBanner');if(nb)nb.classList.remove('on');}catch(e){}
-    if(availEl){
-      availEl.textContent='Tersambung ulang (#'+n+') · kamu = '+(MP.uid||'').slice(0,6);
-      availEl.classList.remove('err');availEl.classList.add('ok');
-    }
+    // Reconnect otomatis: gabung ulang room terakhir + voice:start ulang.
+    // Tanpa ini user harus reload halaman tiap koneksi putus sesaat.
+    // Dipanggil di 'connect' (no-op saat connect pertama: belum ada lastIntent)
+    // karena di Socket.IO v4 event 'reconnect' TIDAK ada di socket — hanya di
+    // Manager (socket.io) — dan di sana namespace belum tentu sudah tersambung.
     mpAutoRejoin();
   });
-  MP.socket.on('reconnect_attempt',()=>{
+
+  MP.socket.io.on('reconnect',(n)=>{
+    if(availEl){
+      availEl.textContent='Tersambung ulang (#'+n+')';
+      availEl.classList.remove('err');availEl.classList.add('ok');
+    }
+  });
+  MP.socket.io.on('reconnect_attempt',()=>{
     if(availEl){availEl.textContent='Menyambung ulang ke server…';availEl.classList.add('wait');}
   });
 
   MP.socket.on('disconnect',(reason)=>{
     MP.ready=false;
+    // Diputus sengaja (mpLeaveRoom) → bukan gangguan jaringan, tanpa banner
+    if(reason==='io client disconnect')return;
     // Sprint 5: banner reconnect terlihat (bukan diam)
     try{const nb=document.getElementById('netBanner');if(nb)nb.classList.add('on');}catch(e){}
     // JANGAN matikan MP.enabled/MP.code: Socket.IO reconnect otomatis,
@@ -4184,6 +4296,8 @@ function mpPostStateToParent(){
 
   // ---------- ROOM STATE (datang saat join/create berhasil) ----------
   MP.socket.on('room:state',(state)=>{
+    // Sambung ulang ke room yang sama (mpAutoRejoin) — bukan masuk baru
+    const rejoin=!!(MP.enabled&&MP.code===state.code);
     MP.enabled=true;
     MP.code=state.code;
     MP.maxPlayers=state.maxPlayers;
@@ -4192,8 +4306,11 @@ function mpPostStateToParent(){
     MP.color=(state.you&&state.you.color)||MP_COLORS[0];
     if(state.you&&state.you.username)MP.username=state.you.username;
     // Ingat intent terakhir utk auto-rejoin saat reconnect (BUG konektivitas).
+    // Nama = yang diminta user, bukan hasil suffix duplikat server "(2)" —
+    // kalau tidak, tiap rejoin menambah suffix lagi.
     MP.lastIntent={mode:MP.lastMode||(MP.isHost?'create':'join'),
-      code:MP.code,name:MP.username,max:MP.maxPlayers};
+      code:MP.code,name:MP.wantName||MP.username,max:MP.maxPlayers};
+    mpSyncLockBtn(!!state.locked);
 
     MP.peers.clear();
     for(const p of state.peers){
@@ -4213,14 +4330,26 @@ function mpPostStateToParent(){
 
     // apply world dari server
     mpApplyRemoteWorldState(state.items||[]);
+    labipaMarkSceneReady(state.items);
 
     document.getElementById('mpRoomCode').textContent=mpFormatRoom(MP.code);
     // Alur overlay (lobby baru): JANGAN tampilkan panel MP lama di dalam game.
     // Kode/pemain/voice sudah diteruskan ke HUD studio via postMessage.
-    if(!MP.handoffMode){document.getElementById('mpPanel').classList.add('on');}
-    appStarted=true;updateCover();setCamMode('orbit');
+    document.getElementById('mpChip').style.display='inline-flex';
+    // Ingat ruangan ini di perangkat → studio menawarkan "Lanjutkan" esok hari
+    try{
+      let rec=JSON.parse(localStorage.getItem('labipa.recentRooms')||'[]');
+      if(!Array.isArray(rec))rec=[];
+      rec=rec.filter(function(r){return r&&r.code!==MP.code;});
+      rec.unshift({code:MP.code,name:MP.wantName||MP.username||'',ts:Date.now()});
+      localStorage.setItem('labipa.recentRooms',JSON.stringify(rec.slice(0,5)));
+    }catch(e){}
+    // URL = ruangan ini: refresh/bagikan link → langsung masuk ruangan yang sama
+    try{history.replaceState(null,'',location.pathname+'?mode=join&room='+encodeURIComponent(MP.code)+'&name='+encodeURIComponent(MP.wantName||MP.username||''));}catch(e){}
+    // Saat sambung ulang, mode kamera yang sedang dipakai jangan direset
+    if(!rejoin){appStarted=true;updateCover();setCamMode('orbit');}
     mpRenderPlayerList();
-    showToast('Masuk room '+mpFormatRoom(MP.code)+(MP.isHost?' (host)':''));
+    showToast((rejoin?'Tersambung lagi ke room ':'Masuk room ')+mpFormatRoom(MP.code)+(MP.isHost?' (host)':''));
     try{
       if(state.status==='archived'||state.status==='read-only')showToast('Dunia '+state.status+' — read-only. Fork untuk mengedit.');
     }catch(e){}
@@ -4282,6 +4411,7 @@ function mpPostStateToParent(){
     }
   });
   MP.socket.on('room:locked',(m)=>{
+    mpSyncLockBtn(!!(m&&m.locked));
     showToast(m&&m.locked?'Room dikunci host':'Room dibuka host');
   });
   // v5.1 FR-34: perubahan peran (host dapat ubah editor↔viewer)
@@ -4323,21 +4453,20 @@ function mpPostStateToParent(){
       if(window.LabIPA&&window.LabIPA.isViewer&&window.LabIPA.isViewer()){
         window.LABIPA_LIVE=true;
         mpApplyRemoteWorldState(m.items||[]);
+        labipaMarkSceneReady(m.items);
         mpSetLiveBadge(true);
         return;
       }
     }catch(e){}
     mpApplyRemoteWorldState(m.items||[]);
+    labipaMarkSceneReady(m.items);
   });
-// PRD v2 FR-08: badge merah Live Edit di toolbar
-function mpSetLiveBadge(on){
-  const b=document.getElementById('btnLiveBadge');
-  if(b)b.style.display=on?'':'none';
-  try{window.LABIPA_LIVE=!!on;}catch(e){}
-}
 
   MP.socket.on('room:host',(m)=>{
-    if(m.peer===MP.uid){MP.isHost=true;showToast('Kamu sekarang host');}
+    // Host baru ikut berperan 'host' (di server juga) — tanpa ini viewer yang
+    // naik jadi host tetap terkunci read-only, dan roster peer lain tak berubah.
+    if(m.peer===MP.uid){MP.isHost=true;MP.myRole='host';showToast('Kamu sekarang host');}
+    else{const p=MP.peers.get(m.peer);if(p){p.isHost=true;p.role='host';}}
     mpRenderPlayerList();
   });
   // Sprint 2: server menolak edit di dunia read-only/archived
@@ -4346,6 +4475,15 @@ function mpSetLiveBadge(on){
     showToast(r==='viewer'?'Viewer read-only — edit ditolak.':('Dunia '+(r||'read-only')+' — edit ditolak. Fork untuk mengedit.'));
   });
 })();
+// PRD v2 FR-08: badge merah Live Edit di toolbar.
+// Harus di luar mpBoot: dulu dideklarasi di dalamnya sehingga mpLeaveRoom()
+// tak bisa memanggilnya (ReferenceError tertelan) → LABIPA_LIVE nyangkut true
+// dan siswa tetap "mode menonton" setelah keluar dari room kelas.
+function mpSetLiveBadge(on){
+  const b=document.getElementById('btnLiveBadge');
+  if(b)b.style.display=on?'':'none';
+  try{window.LABIPA_LIVE=!!on;}catch(e){}
+}
 
 // ---------- LOBBY TABS ----------
 document.querySelectorAll('.mp-tab').forEach(function(tab){
@@ -4364,22 +4502,34 @@ function mpAutoRejoin(){
     const it=MP.lastIntent;
     if(!it||!it.code||!MP.socket||!MP.socket.connected)return;
     MP.lastMode=it.mode;
-    if(it.mode==='create'){
-      MP.socket.emit('room:create',
-        {code:it.code,name:it.name||'Pemain',maxPlayers:it.max||6,
-         items:PHYS.serialize(),avatar:mpLoadAvatar()},
-        function(res){
-          if(res&&res.ok){if(VOICE.capturing){try{MP.socket.emit('voice:start');}catch(e){}}}
-          else{showToast('Rejoin gagal: '+((res&&res.error)||'coba manual'));}
-        });
-    }else{
-      MP.socket.emit('room:join',{code:it.code,name:it.name||'Pemain',avatar:mpLoadAvatar()},
-        function(res){
-          if(res&&res.ok){if(VOICE.capturing){try{MP.socket.emit('voice:start');}catch(e){}}}
-          else{showToast('Rejoin gagal: '+((res&&res.error)||'coba manual'));}
-        });
-    }
+    const name=it.name||'Pemain';
+    const done=function(res){
+      if(res&&res.ok){if(VOICE.capturing){try{MP.socket.emit('voice:start');}catch(e){}}}
+      else{showToast('Rejoin gagal: '+((res&&res.error)||'coba manual'));}
+    };
+    const has=function(res,txt){return !!(res&&!res.ok&&res.error&&res.error.indexOf(txt)!==-1);};
+    // Dunia persisten (PRD v5.2): room tetap ada di server walau kosong, jadi
+    // pembuat room pun harus JOIN — room:create ulang selalu ditolak "Kode
+    // sudah dipakai". Create hanya bila dunianya benar-benar hilang (server
+    // restart tanpa data): hidupkan lagi dari state lokal.
+    const join=function(mayCreate){
+      MP.socket.emit('room:join',{code:it.code,name:name,avatar:mpLoadAvatar(),role:mpUserRole()},function(res){
+        if(!mayCreate||!has(res,'tidak ditemukan')){done(res);return;}
+        MP.socket.emit('room:create',
+          {code:it.code,name:name,maxPlayers:it.max||6,items:PHYS.serialize(),avatar:mpLoadAvatar(),role:mpUserRole()},
+          function(r2){
+            if(has(r2,'dipakai'))join(false); // keduluan peserta lain yang juga rejoin
+            else done(r2);
+          });
+      });
+    };
+    join(true);
   }catch(e){}
+}
+// Tombol kunci mengikuti status room dari server (room:state / room:locked)
+function mpSyncLockBtn(locked){
+  const b=document.getElementById('mpLockBtn');if(!b)return;
+  b.dataset.locked=locked?'1':'0';b.textContent=locked?'🔓 buka':'🔒 kunci';
 }
 
 // ---------- CREATE ROOM ----------
@@ -4387,7 +4537,7 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
   if(!MP.ready){mpSetStatus('mpCreateStatus','Belum terhubung ke server.');return;}
   const name=(document.getElementById('mpCreateName').value||'').trim().slice(0,16)||'Pemain';
   const max=parseInt(document.getElementById('mpCreateMax').value,10)||6;
-  MP.username=name;
+  MP.username=name;MP.wantName=name;
   mpSavePlayerName(name);
   MP.lastMode='create';
   const btn=this;btn.disabled=true;
@@ -4395,7 +4545,7 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
   let createTries=0;
   const doCreate=function(code){
     MP.socket.emit('room:create',
-      {code:code,name:name,maxPlayers:max,items:PHYS.serialize(),avatar:mpLoadAvatar()},
+      {code:code,name:name,maxPlayers:max,items:PHYS.serialize(),avatar:mpLoadAvatar(),role:mpUserRole()},
       (res)=>{
         // Tabrakan kode (sangat jarang) → coba lagi otomatis dengan kode baru
         if(res&&!res.ok&&res.error&&res.error.indexOf('dipakai')!==-1&&createTries<3){
@@ -4408,6 +4558,7 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
         btn.disabled=false;
         if(!res||!res.ok){
           mpSetStatus('mpCreateStatus','Gagal: '+((res&&res.error)||'coba lagi'));
+          updateCover(); // masuk langsung dari studio: lobby tersembunyi → tampilkan agar pesan terbaca
           return;
         }
         mpSetStatus('mpCreateStatus','Room dibuat: '+mpFormatRoom(res.code),'ok');
@@ -4432,15 +4583,16 @@ document.getElementById('btnMpJoin').addEventListener('click',function(){
   if(code.indexOf('LAB')===0&&/^[A-Z0-9]{6}$/.test(code.slice(3).replace(/-/g,'')))code=code.slice(3);
   code=code.replace(/-/g,'').length<=6?code.replace(/-/g,'').slice(0,6):code.slice(0,24);
   if(code.length!==6&&!/^[A-Z0-9][A-Z0-9-]{1,22}[A-Z0-9]$/.test(code)){mpSetStatus('mpJoinStatus','Kode harus 6 karakter (mis. 7K2QDX), format LAB-XXXX-XX, atau kode kelas.');return;}
-  MP.username=name;
+  MP.username=name;MP.wantName=name;
   mpSavePlayerName(name);
   MP.lastMode='join';
   const btn=this;btn.disabled=true;
   mpSetStatus('mpJoinStatus','Mencari room…','wait');
-  MP.socket.emit('room:join',{code:code,name:name,avatar:mpLoadAvatar()},(res)=>{
+  MP.socket.emit('room:join',{code:code,name:name,avatar:mpLoadAvatar(),role:mpUserRole()},(res)=>{
     btn.disabled=false;
     if(!res||!res.ok){
       mpSetStatus('mpJoinStatus','Gagal: '+((res&&res.error)||'coba lagi'));
+      updateCover();
       return;
     }
     mpSetStatus('mpJoinStatus','Bergabung ke '+mpFormatRoom(res.code),'ok');
@@ -4456,19 +4608,27 @@ function mpLeaveRoom(){
   try{if(MP.socket)MP.socket.disconnect();}catch(e){}
   const leftCode=MP.code;
   MP.code=null;MP.enabled=false;MP.ready=false;MP.lastIntent=null;
-  MP.myRole='editor';
+  MP.myRole='editor';MP.isHost=false;
+  // disconnect() = cara keluar room di server, tapi socket yang diputus manual
+  // tidak menyambung sendiri → sambungkan lagi agar bisa buat/gabung room lain
+  // tanpa reload (lastIntent sudah null, jadi tidak auto-rejoin).
+  try{if(MP.socket)MP.socket.connect();}catch(e){}
   MP.peers.clear();
   try{MP.avatars.forEach(function(av){scene.remove(av.group);});}catch(e){}
   MP.avatars.clear();
   try{document.getElementById('mpRoomCode').textContent='——————';}catch(e){}
-  try{document.getElementById('mpPanel').classList.remove('on');}catch(e){}
+  try{document.getElementById('mpPanel').classList.remove('on');document.getElementById('mpChip').style.display='none';}catch(e){}
+  try{history.replaceState(null,'',location.pathname);}catch(e){}
   try{mpSetLiveBadge(false);}catch(e){}
   // Kabari parent (overlay studio) agar menutup iframe & kembali ke studio.
   mpNotifyParent({type:'labipa-exit',code:leftCode});
   try{appStarted=false;updateCover();setCamMode('orbit');}catch(e){}
   showToast('Keluar room '+mpFormatRoom(leftCode));
+  // Datang dari studio → keluar room = kembali ke studio (bukan ke lobby lama)
+  if(MP.handoffMode)gameGoStudio();
 }
 document.getElementById('mpLeaveBtn').addEventListener('click',mpLeaveRoom);
+document.getElementById('mpChipToggle').addEventListener('click',function(){document.getElementById('mpPanel').classList.toggle('on');});
 // PRD v1.0 FR-01: ubah nama dari panel Info/MP (persist + update sprite lokal)
 document.getElementById('mpRenameBtn').addEventListener('click',function(){
   const cur=MP.username||mpLoadPlayerName()||'';
@@ -4477,7 +4637,7 @@ document.getElementById('mpRenameBtn').addEventListener('click',function(){
   if(n==null)return;
   n=n.trim().slice(0,16);
   if(!n){showToast('Nama tidak boleh kosong');return;}
-  MP.username=n;mpSavePlayerName(n);
+  MP.username=n;MP.wantName=n;mpSavePlayerName(n);
   try{
     if(MP.localAvatar){MP.localAvatar.group.remove(MP.localAvatar.label);MP.localAvatar.label=mpMakeNameSprite(n,MP.color);MP.localAvatar.label.position.y=1.64;MP.localAvatar.group.add(MP.localAvatar.label);MP.localAvatar.lastName=n;}
   }catch(e){}
@@ -4521,6 +4681,8 @@ if(!window._mpRoleWired){
     // Autosave debounced tiap 30 dtk bila ada perubahan (diam, tanpa toast)
     setInterval(function(){
       try{
+        // Tab kedua menonton: jangan autosave (layout milik tab utama)
+        if(mpIsWatchTab())return;
         // PRD v4.0 FR-22: pause saat gate terkunci
         if(window.LabIPA&&window.LabIPA.Gate&&window.LabIPA.Gate.isLocked()){
           const b=document.getElementById('gateBanner');
@@ -4601,7 +4763,7 @@ if(!window._mpRoleWired){
   // Sprint 1: SSO (?sso=1 → mock OIDC; ?code= → tukar otomatis)
   try{
     const q=new URL(location.href).searchParams;
-    if(q.get('code')&&window.LabIPA&&window.LabIPA.Auth){
+    if(q.get('code')&&!q.get('mode')&&window.LabIPA&&window.LabIPA.Auth){
       window.LabIPA.Auth.exchange(q.get('code'),{}).then(function(s){
         if(s&&s.user){
           if(s.user.name){
@@ -4666,7 +4828,7 @@ if(!window._mpRoleWired){
         const fresh=items.filter(function(n){return n.id&&n.id>seen;});
         if(fresh.length){
           try{localStorage.setItem(seenKey,items[0].id);}catch(e){}
-          const last=fresh[fresh.length-1];
+          const last=fresh[0]; // items urut terbaru dulu → [0] = notifikasi paling baru
           try{showToast('🔔 '+last.text);}catch(e){}
         }
       }).catch(function(){});
@@ -4818,6 +4980,15 @@ function mpPushWorldStateDebounced(){
 }
 function mpPushWorldStateNow(){
   if(!MP.code)return;
+  // Tab kedua menonton: batalkan kirim yang sempat terjadwal.
+  if(mpIsWatchTab()){ mpWritePending=false; return; }
+  if(MP.applyingRemote){
+    // Apply remote sedang berjalan (sinkron): tunda kirim agar dunia
+    // setengah jadi tak terkirim ke server. Dijadwal ulang sekali.
+    if(mpPushTimer)clearTimeout(mpPushTimer);
+    mpPushTimer=setTimeout(mpPushWorldStateNow,120);
+    return;
+  }
   if(mpWriting){mpWritePending=true;return;}
   mpWriting=true;
   MP.socket.emit('world:update',{
@@ -4830,21 +5001,23 @@ function mpPushWorldStateNow(){
 }
 function mpMaybePushWorld(){
   if(!MP.code||MP.applyingRemote)return;
+  // Tab kedua murni menonton: JANGAN kirim world (fisika lokal bisa
+  // menggeser benda → tab menonton akan bertarung dengan tab utama).
+  if(mpIsWatchTab()){ try{ mpLastFingerprint=mpComputeFingerprint(); }catch(e){} return; }
   const fp=mpComputeFingerprint();
   if(fp===mpLastFingerprint)return;
   mpLastFingerprint=fp;
   mpPushWorldStateDebounced();
 }
 
-// ---------- APPLY REMOTE WORLD ----------
-function mpApplyRemoteWorldState(items){
-  if(!Array.isArray(items))return;
-  MP.applyingRemote=true;
-  if(PLACEMENT.active)cancelPlacement();
-  PHYS.clearAll();selectedBody=null;
-
-  for(let i=0;i<items.length;i++){
-    const it=items[i],def=MAKERS[it.itemKey];if(!def)continue;
+// ---------- APPLY REMOTE WORLD (atomik, FR-2) ----------
+// Satu item snapshot → true bila berhasil dibangun. Gagal (def.make()
+// melempar / data rusak) = false: item dilewati TANPA menggagalkan dunia.
+// Dipakai apply remote & rollback agar tak ada dunia setengah jadi.
+function mpSpawnSnapshotItem(it){
+  try{
+    if(!it||!it.pos)return false; // item rusak dari peer lain: lewati
+    const def=MAKERS[it.itemKey];if(!def)return false;
     const real=def.make();
     real.position.set(it.pos.x,0,it.pos.z);   // abaikan pos.y dari snapshot
     real.rotation.set(0,it.rotY||0,0);
@@ -4881,10 +5054,36 @@ function mpApplyRemoteWorldState(items){
       real.position.y=0;
       b.stuck=true;b.stuckSurface='floor';
     }
-  }
+    return true;
+  }catch(e){ return false; }
+}
+function mpApplyRemoteWorldState(items){
+  if(!Array.isArray(items))return;
+  MP.applyingRemote=true;
+  // Snapshot untuk rollback: bila pembangunan gagal total di tengah jalan,
+  // dunia LAMA dipulihkan utuh — jangan pernah menyisakan dunia setengah
+  // jadi yang lalu terkirim ke server via mpMaybePushWorld().
+  // try/finally: applyingRemote TIDAK boleh nyangkut true.
+  let backup=null;
+  try{ backup=PHYS.serialize(); }catch(e){ backup=null; }
+  try{
+  if(PLACEMENT.active)cancelPlacement();
+  PHYS.clearAll();selectedBody=null;
+
+  for(let i=0;i<items.length;i++){ mpSpawnSnapshotItem(items[i]); }
   renderInspector();updateStats();
   mpLastFingerprint=mpComputeFingerprint();
-  MP.applyingRemote=false;
+  }catch(err){
+    try{
+      try{ if(PLACEMENT.active)cancelPlacement(); }catch(e){}
+      PHYS.clearAll();selectedBody=null;
+      const src=Array.isArray(backup)?backup:[];
+      for(let i=0;i<src.length;i++){ mpSpawnSnapshotItem(src[i]); }
+    }catch(e2){}
+    try{ renderInspector();updateStats(); }catch(e){}
+    try{ mpLastFingerprint=mpComputeFingerprint(); }catch(e){}
+    try{ console.warn('[MP] world state gagal diterapkan — rollback ke state lama', err); }catch(e){}
+  }finally{MP.applyingRemote=false;}
 }
 
 function mpMakeNameSprite(text,colorHex){
@@ -5066,6 +5265,25 @@ function mpSavePlayerName(n){
   n=String(n||'').trim().slice(0,16);
   try{localStorage.setItem('labipa.playerName',n);}catch(e){}
   try{localStorage.setItem('labipa_player',JSON.stringify({name:n||'Pemain'}));}catch(e){}
+}
+// FR-1: klaim peran dari sesi login untuk penentuan host room kelas.
+// 'guru' / 'siswa' / null (tanpa sesi = client lama). Server hanya memakai
+// ini untuk MEMBATASI (siswa tak jadi host); tanpa klaim guru = bukan host.
+function mpUserRole(){
+  try{
+    const s=window.LabIPA&&window.LabIPA.Auth&&window.LabIPA.Auth.getSession();
+    const r=s&&s.user&&s.user.role;
+    if(r==='guru'||r==='siswa')return r;
+  }catch(e){}
+  return null;
+}
+// Tab kedua = MURNI menonton: edit dilakukan di tab utama (pertama).
+// Peran ditentukan heartbeat labipa-backend (localStorage 'labipa.activetab').
+// Semua jalur mutasi & kirim world wajib memanggil mpBlockWatchTab() dulu.
+function mpIsWatchTab(){ try{ return !!window.LABIPA_SECOND_TAB; }catch(e){ return false; } }
+function mpBlockWatchTab(){
+  if(mpIsWatchTab()){ showToast('Tab kedua mode menonton — edit di tab utama'); return true; }
+  return false;
 }
 // ---------- HUD PLAYER LIST ----------
 function mpRoleBadge(pres,isSelf){
@@ -5551,15 +5769,17 @@ function rtcMakePC(peerId){
         try{
           const src=VOICE_RTC.rtcCtx.createMediaStreamSource(stream);
           src.connect(VOICE_RTC.rtcComp);
-        }catch(_){ rtcFallbackAudio(stream); }
-      }else rtcFallbackAudio(stream);
+        }catch(_){ rtcFallbackAudio(stream,peerId); }
+      }else rtcFallbackAudio(stream,peerId);
       VOICE.speakingPeers.add(peerId);updateVoiceUI();
       e.track.onended=function(){VOICE.speakingPeers.delete(peerId);updateVoiceUI();};
     }catch(err){}
   };
   return pc;
 }
-function rtcFallbackAudio(stream){
+// peerId wajib dioper: dulu dibaca dari scope luar (tak terdefinisi) →
+// ReferenceError tertelan try/catch, audio fallback tak pernah terpasang.
+function rtcFallbackAudio(stream,peerId){
   try{
     let el=document.getElementById('rtcAudio_'+peerId);
     if(!el){el=document.createElement('audio');el.id='rtcAudio_'+peerId;el.autoplay=true;el.style.display='none';document.body.appendChild(el);}
@@ -5811,6 +6031,7 @@ document.addEventListener('keydown',function(e){
   }
   if(e.code==='Delete'||e.code==='Backspace'){
     if(selectedBody){
+      if(mpBlockWatchTab()){e.preventDefault();return;}
       scene.remove(selectedBody.mesh);
       const i=PHYS.bodies.indexOf(selectedBody);if(i>=0)PHYS.bodies.splice(i,1);
       selectedBody=null;renderInspector();updateStats();
@@ -5949,6 +6170,7 @@ document.getElementById('wmRestore').addEventListener('click',function(){
 const dlBtn=document.getElementById('btnDownload'); if(dlBtn) dlBtn.addEventListener('click',downloadLayoutHTML);
 document.getElementById('btnLoad').addEventListener('click',loadLayout);
 document.getElementById('btnReset').addEventListener('click',function(){
+  if(mpBlockWatchTab())return;
   if(confirm('Reset seluruh ruangan?')){PHYS.clearAll();selectedBody=null;renderInspector();updateStats();}
 });
 document.getElementById('btnStd').addEventListener('click',openStd);
@@ -5960,6 +6182,17 @@ document.getElementById('stdClose').addEventListener('click',closeStd);
 // =============================================================
 const LS_CACHE_KEY='labipa.cache.layout.v1';
 function labipaAdapter(){ try{return (window.LabIPA&&window.LabIPA.Storage)||null;}catch(e){return null;} }
+// FR-3: tandai scene sudah dimuat agar flushQueue boleh mengadopsi id dari
+// antrean offline. Scene berisi item = bukti sudah dimuat (bukan kosong
+// pasca-reload). Setelah siap, antrean yang sempat ditahan segera diproses.
+function labipaMarkSceneReady(items){
+  try{
+    const a=labipaAdapter();
+    if(!a||!a.setSceneReady)return;
+    if(items&&items.length)a.setSceneReady(true);
+    if(a.isSceneReady&&a.isSceneReady()&&a.flushQueue)a.flushQueue().catch(function(){});
+  }catch(e){}
+}
 function labipaCacheWrite(items){
   try{localStorage.setItem(LS_CACHE_KEY,JSON.stringify({v:2,items:items,ts:Date.now()}));}catch(e){}
   // v3.0 FR-11: draft IndexedDB per session (sessionId = kode room / 'solo')
@@ -5989,6 +6222,7 @@ function labipaSaveState(s, tip){
 }
 function saveLayout(){
   try{
+    if(mpBlockWatchTab())return;
     const items=PHYS.serialize();
     const adapter=labipaAdapter();
     labipaCacheWrite(items);
@@ -6040,6 +6274,7 @@ function downloadLayoutHTML(){
   }catch(e){ showToast('Gagal download: '+e.message); }
 }
 function loadLayout(){
+    if(mpBlockWatchTab())return;
     const applyItems=function(items,tag){
       try{
       if(PLACEMENT.active)cancelPlacement();
@@ -6082,6 +6317,7 @@ function loadLayout(){
     }
       updateStats();showToast('Dimuat ('+items.length+' item)'+(tag?' · '+tag:''));
       labipaCacheWrite(items);
+      labipaMarkSceneReady(items);
       }catch(e){showToast('Gagal muat: '+e.message);return;}
     };
     // Muat dari server bila tersedia (adapter), fallback cache offline
@@ -6175,10 +6411,29 @@ const lampSlider=document.getElementById('lampSlider');
 const lampVal=document.getElementById('lampVal');
 function setLights(pct){
   const f=pct/100;
-  ambient.intensity=0.55*f;sun.intensity=1.05*f;hemi.intensity=0.42*f;
-  for(let i=0;i<labLights.length;i++)labLights[i].intensity=0.8*f;
+  LAMP_LEVEL=f;
+  // Cahaya pengisi (ambient/hemi) sengaja kecil: kalau besar, gambar jadi rata
+  // & pucat — bentuk, bayangan, dan pantulan material tidak terbaca.
+  ambient.intensity=0.2*f;sun.intensity=1.25*f;hemi.intensity=0.28*f;
+  for(let i=0;i<labLights.length;i++)labLights[i].intensity=0.65*f;
+  // FR-4: cahaya semu lampu/bunsen (emissive + glow) ikut slider. Entri
+  // milik item yang sudah dihapus dilewati & dibuang berkala.
+  try{
+    if(LAMP_FX.length>600){
+      LAMP_FX=LAMP_FX.filter(function(e){ return e&&e.root&&e.root.parent; });
+    }
+    for(let i=0;i<LAMP_FX.length;i++){
+      const e=LAMP_FX[i];if(!e)continue;
+      if(e.root&&!e.root.parent)continue;
+      if(e.mat&&e.mat.emissive)e.mat.emissiveIntensity=e.base*f;
+      if(e.spr&&e.spr.material)e.spr.material.opacity=Math.min(1,e.base*f);
+    }
+  }catch(e){}
   lampVal.textContent=pct;
 }
+// Terapkan sekali saat awal: dulu nilai awal lampu ≠ nilai slider 100%,
+// jadi menyentuh slider mengubah tampilan walau angkanya sama.
+setLights(parseInt(lampSlider.value,10)||100);
 lampSlider.addEventListener('input',function(e){
   setLights(parseInt(e.target.value,10));
   document.querySelectorAll('.presets button').forEach(function(b){b.setAttribute('aria-pressed','false');});
@@ -6494,14 +6749,17 @@ function playOpeningJingle(){
 document.getElementById('cover').style.display='none';
 const openingEl=document.getElementById('opening');
 playOpeningJingle();
-setTimeout(function(){
-  if(openingEl)openingEl.classList.add('hide');
-  // BUG#2: alur overlay (lobby baru, ?mode=...) — JANGAN tampilkan splash/cover
-  // lama di dalam iframe; cover hanya muncul sebagai fallback bila auto-mulai gagal.
+// Masuk dari studio (?mode=...) → langsung ke lab: tanpa splash & tanpa cover
+// (cover hanya fallback bila auto-mulai gagal). Buka game.html polos → lobby.
+(function(){
   let hm='';
   try{hm=new URL(location.href).searchParams.get('mode')||'';}catch(e){}
-  if(!hm)document.getElementById('cover').style.display='grid';
-},1800);
+  if(hm){if(openingEl)openingEl.classList.add('hide');return;}
+  setTimeout(function(){
+    if(openingEl)openingEl.classList.add('hide');
+    document.getElementById('cover').style.display='grid';
+  },1800);
+})();
 // =============================================================
 // COVER — Backsound stempel saat masuk (user gesture → boleh autoplay)
 // =============================================================
@@ -6607,42 +6865,36 @@ document.getElementById('btnStart').addEventListener('click',function(e){
       if(mx>=2&&mx<=8){var sel=document.getElementById('mpCreateMax');if(sel)sel.value=String(mx);}
       // BUG#1: ambil kode SEKALI dari studio (single source of truth).
       // btnMpCreate WAJIB memakai ini, bukan generate ulang (lihat handler create).
-      var hc=(qp('code')||qp('roomCode')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(-6);
+      var hc=(qp('room')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(-6);
       if(hc&&hc.length===6){try{MP.pendingHandoffCode=hc;}catch(e){}}
       try{MP.lastMode='create';}catch(e){}
     }
     if(mode==='join'){
-      var code=(qp('code')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
+      // kode acak 6 char ATAU kode kelas (mis. 8A-IPA-2026) — handler Gabung yang menormalkan
+      var code=(qp('room')||'').toUpperCase().replace(/[^A-Z0-9-]/g,'').slice(0,24);
       var jc=document.getElementById('mpJoinCode');if(jc&&code)jc.value=code;
       try{MP.lastMode='join';}catch(e){}
     }
     if(mode==='solo'){try{MP.lastMode='solo';}catch(e){}}
-    try{history.replaceState(null,'',location.pathname);}catch(e){}
-    // Tampilkan tab yang sesuai (create/join) agar status koneksi terlihat
     if(mode==='create'||mode==='join'){
       document.querySelectorAll('.mp-tab').forEach(function(t){t.classList.toggle('on',t.dataset.mptab===mode);});
       document.querySelectorAll('.mp-panel').forEach(function(p){p.classList.toggle('on',p.dataset.mppanel===mode);});
     }
-    var tries=0;
-    var timer=setInterval(function(){
-      tries++;
-      // BUG#2: jangan diam saat server tak terjangkau — tampilkan cover sebagai
-      // fallback manual + kabari parent agar studio bisa kasih toast/opsi keluar.
-      if(tries>60){clearInterval(timer);
-        try{document.getElementById('cover').style.display='grid';}catch(e){}
-        try{if(window.parent&&window.parent!==window)window.parent.postMessage({src:'labipa-game',type:'labipa-handoff-failed',mode:mode},'*');}catch(e){}
-        try{showToast('Gagal auto-mulai — server tak terjangkau. Coba manual / cek koneksi.');}catch(e){}
-        return;}
-      if(mode==='solo'){
-        clearInterval(timer);
-        document.getElementById('btnStart').click();
-      }else{
-        if(!MP.ready)return;
-        clearInterval(timer);
-        if(mode==='create'){document.getElementById('btnMpCreate').click();}
-        else{document.getElementById('btnMpJoin').click();}
-      }
-    },350);
+    // Mulai langsung. Solo tak butuh server; create/join menunggu socket
+    // tersambung (event, bukan polling). Gagal → lobby sebagai jalan manual.
+    var started=false;
+    var fail=function(msg){
+      if(started)return;started=true;
+      try{document.getElementById('cover').style.display='grid';}catch(e){}
+      try{showToast(msg);}catch(e){}
+    };
+    var go=function(){
+      if(started)return;started=true;
+      document.getElementById(mode==='solo'?'btnStart':(mode==='create'?'btnMpCreate':'btnMpJoin')).click();
+    };
+    if(mode==='solo'||MP.ready)go();
+    else if(MP.socket){MP.socket.once('connect',go);setTimeout(function(){fail('Server tak terjangkau — coba manual / cek koneksi.');},15000);}
+    else fail('Multiplayer tidak tersedia — coba mode solo.');
   }
 })();
 

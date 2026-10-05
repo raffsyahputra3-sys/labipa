@@ -20,13 +20,17 @@ async function waitUp(tries = 40) {
   throw new Error('server tidak start');
 }
 
-async function start() {
+// env: variabel tambahan untuk server; opts.seedKey=false → jangan tulis
+// masterkey.json (untuk menguji kunci yang datang dari env MASTER_KEY).
+async function start(env, opts) {
   // kunci gate deterministik untuk test
-  require('node:child_process').execFileSync(process.execPath,
-    [path.join(__dirname, '..', 'scripts', 'gate-cli.js'), 'rotate', '--', '--new-key', 'TESTKEY123'],
-    { env: { ...process.env, DATA_DIR }, stdio: 'ignore' });
+  if (!opts || opts.seedKey !== false) {
+    require('node:child_process').execFileSync(process.execPath,
+      [path.join(__dirname, '..', 'scripts', 'gate-cli.js'), 'rotate', '--', '--new-key', 'TESTKEY123'],
+      { env: { ...process.env, DATA_DIR }, stdio: 'ignore' });
+  }
   child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-    env: { ...process.env, PORT: String(PORT), DATA_DIR }, stdio: 'ignore'
+    env: { ...process.env, PORT: String(PORT), DATA_DIR, ...(env || {}) }, stdio: 'ignore'
   });
   await waitUp();
   return BASE;

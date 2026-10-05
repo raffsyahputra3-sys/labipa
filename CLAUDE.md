@@ -7,8 +7,10 @@ Aplikasi lab IPA 3D multiplayer (Three.js r128 + Socket.IO). Repo: `labipa`
 - `npm install && npm start` → http://localhost:3000 (`/health`)
 - Landing: `public/index.html` · App 3D: `public/game.html` (file besar,
   logika inline ±6500 baris) · Modul client: `public/js/labipa-backend.js`
-- Test: `npm test` (node:test, 15 test, `tests/`, tiap file spawn server
-  sendiri — JANGAN jalankan paralel di port sama)
+- Test: `npm test` (node:test, 27 test, `tests/`, tiap file spawn server
+  sendiri — JANGAN jalankan paralel di port sama). `tests/env.test.js` =
+  server ber-env khusus (`MASTER_KEY`, `ARCHIVE_DIR`); socket test WAJIB
+  ditutup di `after()` (kalau tidak, proses test menggantung)
 - Lint: `npm run lint` (ESLint flat, harus 0 error)
 - Node lokal v24; `engines` bilang 18.x (warning EBADENGINE aman diabaikan)
 
@@ -18,8 +20,13 @@ Aplikasi lab IPA 3D multiplayer (Three.js r128 + Socket.IO). Repo: `labipa`
   `GATE_IP_WHITELIST`, `GATE_MAX_ATTEMPTS`
 - `ALLOW_GUEST`, `ENABLE_LIVE_EDIT`, `MOCK_OIDC` (default true)
 - `TURN_URLS,TURN_USER,TURN_PASS` → diteruskan ke client via `/api/flags`
-- `DATABASE_URL`/`REDIS_URL` → aktifkan mode Postgres (butuh `npm i pg redis`);
-  tanpa itu `server/db.js` fallback file-store. Migrasi: `node scripts/migrate.js`
+- `DATABASE_URL` (Postgres, mis. Neon) → berkas state (`rooms/layouts/
+  checkpoints/notifications.json` + arsip) DICERMINKAN ke tabel `labipa_kv`
+  (dibuat otomatis) lewat `server/db.js`; saat boot `bootRestore()` mengisi
+  ulang `DATA_DIR` dari database lalu `restorePersisted()`. Wajib di Render
+  gratis (disk terhapus tiap tidur). Tanpa itu murni file-store. Skema
+  relasional `db/001_init.sql` + `scripts/migrate*.js` BELUM dipakai server.
+  Test tanpa Postgres: `LABIPA_PG_MODULE` = path driver tiruan
 - `ARCHIVE_DIR` (mount S3), `OWNER_EMAIL` (notifikasi), `SSO_ISSUER` (SIAKAD asli)
 
 ## Arsitektur server (`server.js` — monolit, CommonJS)
@@ -31,6 +38,14 @@ Aplikasi lab IPA 3D multiplayer (Three.js r128 + Socket.IO). Repo: `labipa`
   `player:join/leave`, `room:host`, `room:state`, `world:denied`
 - Presence punya `role`: host/editor/viewer. Viewer & dunia read-only/
   archived → `world:update` ditolak (`world:denied`).
+- Keanggotaan room HANYA lewat `joinRoom()`/`leaveRoom()` (dipakai juga oleh
+  disconnect & saat pindah room). Masuk ke dunia kosong → jadi host + kunci
+  lama gugur; host keluar → penerus `role:'host'`; sesi berakhir →
+  checkpoint `session-idle` (bila berubah). Handler socket harus tahan
+  payload/ack rusak (`ack()`/`obj()`): exception di handler = proses mati.
+  Item tanpa `itemKey`/`pos` disaring (`validItem`).
+- Live Edit (`PUT /api/layouts/:id` → room kelas) hanya bila editor guru ATAU
+  layout sudah dipublish — draf pribadi siswa tidak boleh menimpa dunia kelas.
 - REST: `/api/auth/*` (guest/exchange/me), `/api/layouts` CRUD + 409
   optimistic lock (+`force`), clone/publish/soft-delete/restore,
   `/api/classes/:id/{layouts,members}`, `/api/gate/{status,unlock,rotate,
@@ -63,6 +78,20 @@ Aplikasi lab IPA 3D multiplayer (Three.js r128 + Socket.IO). Repo: `labipa`
   banner `#gateBanner`/`#netBanner`, overlay `#gateOverlay`
 - Voice default Socket.IO PCM; WebRTC mesh hanya bila `?webrtc=1`;
   `VOICE_CONFIG` diexpose ke `window` untuk injeksi TURN
+- Reconnect: `mpAutoRejoin()` dipanggil dari event `connect` (Socket.IO v4:
+  `reconnect` hanya ada di Manager `socket.io`, BUKAN di socket) dan selalu
+  `room:join` dulu — `room:create` hanya bila dunia hilang di server.
+  `mpLeaveRoom()` = `disconnect()` lalu `connect()` lagi
+- Masuk game = pindah halaman: `index.html` → `game.html?mode=solo|create|
+  join&name=&room=&max=` (TANPA iframe/overlay). Kode ruangan pakai `?room=`,
+  BUKAN `?code=` (itu milik SSO). Setelah `room:state` URL ditulis ulang jadi
+  `?mode=join&room=KODE` → refresh = masuk ruangan yang sama. Kode ruangan
+  tampil di SATU tempat: chip topbar `#mpChip` (`#mpCopyCode` salin,
+  `#mpChipToggle` buka `#mpPanel`). Keluar room dari alur studio → `index.html`
+- Gate: `Gate.check()` selalu tanya `/api/gate/status`; bila
+  `GATE_REQUIRED=false` → `isLocked()` false & overlay tidak muncul
+- Antrean offline (`LS_QUEUE`) hanya menyimpan snapshot TERBARU; `flushQueue`
+  membuang op setelah server menerima (bukan sebelum mencoba)
 
 ## Konvensi
 - Jangan tambah dependensi native; stdlib dulu

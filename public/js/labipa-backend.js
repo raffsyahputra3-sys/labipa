@@ -36,7 +36,15 @@ var AuthModule = {
   setSession: function (s) { ssSet(SS_SESSION, JSON.stringify(s)); },
   clear: function () { ssDel(SS_SESSION); },
   decode: function (jwt) {
-    try { return JSON.parse(atob(String(jwt).split('.')[1])); } catch (e) { return null; }
+    try {
+      // Payload JWT = base64url (bukan base64 biasa) berisi UTF-8
+      var b64 = String(jwt).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      var bin = atob(b64);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch (e) { return null; }
   },
   // Login SSO: redirect ke IdP bila dikonfigurasi, else fallback guest/dev-exchange
   login: function (opts) {
@@ -150,17 +158,20 @@ var LocalCache = {
   queue: function () {
     try { return JSON.parse(lsGet(LS_QUEUE) || '[]'); } catch (e) { return []; }
   },
+  // Tiap op membawa snapshot layout PENUH, jadi cukup simpan yang terbaru.
+  // Kalau ditumpuk, tiap autosave selama offline jadi satu 'create' sendiri
+  // → sekali online terbentuk puluhan layout kembar.
   enqueue: function (op) {
-    var q = LocalCache.queue();
-    q.push(Object.assign({ ts: Date.now() }, op));
-    lsSet(LS_QUEUE, JSON.stringify(q.slice(-50)));
+    lsSet(LS_QUEUE, JSON.stringify([Object.assign({ ts: Date.now() }, op)]));
   },
+  peek: function () { return LocalCache.queue()[0] || null; },
   shift: function () {
     var q = LocalCache.queue();
     var op = q.shift();
     lsSet(LS_QUEUE, JSON.stringify(q));
     return op;
   },
+  clear: function () { lsDel(LS_QUEUE); },
   cacheLayout: function (doc) { lsSet(LS_CACHE, JSON.stringify(doc)); },
   readCache: function () {
     try { return JSON.parse(lsGet(LS_CACHE) || 'null'); } catch (e) { return null; }
@@ -171,6 +182,12 @@ var LocalCache = {
 var StorageAdapter = {
   currentId: null,
   currentVersion: null,
+  // FR-3: scene belum dimuat setelah reload → antrean 'update' DITAHAN.
+  // Kalau id dari antrean langsung diadopsi sementara scene masih kosong,
+  // autosave berikutnya menimpa layout lama dengan scene kosong.
+  _sceneReady: false,
+  setSceneReady: function (v) { StorageAdapter._sceneReady = v !== false; },
+  isSceneReady: function () { return !!StorageAdapter._sceneReady; },
   list: function () { return RemoteStore.list().catch(function () { return []; }); },
   get: function (id) {
     return RemoteStore.get(id).catch(function () {
@@ -183,10 +200,14 @@ var StorageAdapter = {
     var force = !!(opts && opts.force);
     var payload = { name: layout.name || 'Layout Lab', items: layout.items, classId: layout.classId };
     if (force) payload.force = true;
+    // Scene berisi item = bukti scene sudah dimuat (bukan scene kosong
+    // pasca-reload). Tandai siap agar flushQueue boleh mengadopsi id.
+    if (payload.items && payload.items.length) StorageAdapter._sceneReady = true;
     if (!StorageAdapter.currentId) {
       return RemoteStore.create(payload).then(function (it) {
         StorageAdapter.currentId = it.id;
         StorageAdapter.currentVersion = it.version;
+        LocalCache.clear(); // snapshot ini lebih baru dari apa pun yang masih antre
         return it;
       }).catch(function () {
         // Offline: antre + cache lokal + WAL IndexedDB (payload besar)
@@ -199,31 +220,57 @@ var StorageAdapter = {
     return RemoteStore.update(StorageAdapter.currentId, StorageAdapter.currentVersion, payload)
       .then(function (it) {
         StorageAdapter.currentVersion = it.version;
+        LocalCache.clear();
         return it;
       }).catch(function (e) {
         if (e && e.status === 409) throw e; // conflict wajib ditangani UI (modal muat ulang)
-        LocalCache.enqueue({ op: 'update', id: StorageAdapter.currentId, payload: payload });
+        LocalCache.enqueue({ op: 'update', id: StorageAdapter.currentId, version: StorageAdapter.currentVersion, payload: payload });
         LocalCache.cacheLayout({ items: payload.items, ts: Date.now() });
         try { WalDB.putLatest(payload.items); } catch (e2) {}
         return { offline: true, items: payload.items };
       });
   },
   flushQueue: function () {
+    // Dipanggil dari boot, event 'online', dan unlock gate → jangan jalan dobel
+    if (StorageAdapter._flushing) return StorageAdapter._flushing;
     var out = [];
-    var op = LocalCache.shift();
     function next() {
+      // Op baru dibuang dari antrean SETELAH server menerimanya; kalau masih
+      // offline ia tetap antre untuk dicoba lagi (dulu hilang begitu saja).
+      var op = LocalCache.peek();
       if (!op) return Promise.resolve(out);
+      // 'update' membawa id layout-nya sendiri (currentId kosong lagi setelah
+      // reload); 'create' saat layout sudah ada = update, bukan layout baru.
+      var needsAdopt = (op.op === 'update' && op.id) && !StorageAdapter.currentId;
+      if (needsAdopt && !StorageAdapter._sceneReady) {
+        // FR-3: scene belum dimuat — TAHAN antrean (jangan shift), coba lagi
+        // pada flush berikutnya setelah scene siap. Kalau id diadopsi
+        // sekarang, autosave berikut menimpa layout lama dengan scene kosong.
+        out.push('deferred');
+        return Promise.resolve(out);
+      }
+      var id = (op.op === 'update' && op.id) || StorageAdapter.currentId;
       var p;
-      if (op.op === 'create') p = RemoteStore.create(op.payload);
-      else if (op.op === 'update' && StorageAdapter.currentId) {
-        p = RemoteStore.update(StorageAdapter.currentId, StorageAdapter.currentVersion, op.payload);
-      } else p = Promise.resolve(null);
+      if (id) {
+        var version = id === StorageAdapter.currentId ? StorageAdapter.currentVersion : op.version;
+        p = RemoteStore.update(id, version, op.payload);
+      } else if (op.op === 'create') p = RemoteStore.create(op.payload);
+      else p = Promise.resolve(null);
       return p.then(function (it) {
         if (it && it.id) { StorageAdapter.currentId = it.id; StorageAdapter.currentVersion = it.version; }
-        out.push(true); op = LocalCache.shift(); return next();
-      }).catch(function () { out.push(false); op = null; return out; });
+        LocalCache.shift(); out.push(true); return next();
+      }).catch(function (e) {
+        out.push(false);
+        // Ditolak server (409/4xx): diulang pun tetap ditolak → buang supaya
+        // antrean tidak macet. Gagal jaringan/5xx: biarkan antre.
+        if (e && e.status >= 400 && e.status < 500) { LocalCache.shift(); return next(); }
+        return out;
+      });
     }
-    return next();
+    var done = function () { StorageAdapter._flushing = null; };
+    StorageAdapter._flushing = next();
+    StorageAdapter._flushing.then(done, done);
+    return StorageAdapter._flushing;
   },
   // Migrasi satu-kali: localStorage legacy → backend, lalu hapus kunci legacy
   migrateIfNeeded: function (getItems) {
@@ -279,14 +326,20 @@ var Gate = {
   },
   token: gateToken,
   isLocked: function () {
-    try { return window.LABIPA_GATE_LOCKED === true || !gateToken(); } catch (e) { return true; }
+    try {
+      if (!Gate.required()) return false; // GATE_REQUIRED=false → tidak ada yang dikunci
+      return window.LABIPA_GATE_LOCKED === true || !gateToken();
+    } catch (e) { return true; }
   },
   check: function () {
     var t = gateToken();
-    if (!t) return Promise.resolve(false);
-    return fetch('/api/gate/status', { headers: { Authorization: 'Bearer ' + t } })
+    // Status SELALU ditanyakan, juga tanpa token: hanya server yang tahu gate
+    // wajib atau tidak (tanpa ini GATE_REQUIRED=false tetap memunculkan overlay).
+    return fetch('/api/gate/status', { headers: t ? { Authorization: 'Bearer ' + t } : {} })
       .then(function (r) { return r.json(); }).then(function (j) {
         if (j && typeof j.required === 'boolean') window.LABIPA_GATE_REQUIRED = j.required;
+        // Token ditolak server (kedaluwarsa/dicabut) → buang, agar isLocked() jujur
+        if (t && j && j.unlocked === false) ssDel(GATE_TOKEN_KEY);
         return !!(j && j.unlocked);
       }).catch(function () { return !!t; }); // offline → anggap terkunci lunak? tidak: token ada = lanjut
   },
@@ -315,6 +368,7 @@ var Gate = {
     });
   },
   lock: function (reason) {
+    if (!Gate.required()) return; // timer idle tetap jalan walau gate dimatikan
     var t = gateToken();
     if (t) {
       fetch('/api/gate/lock', { method: 'POST', headers: { Authorization: 'Bearer ' + t } }).catch(function () {});
