@@ -62,7 +62,7 @@ function persistAll() {
         items: r.items, itemsUpdatedAt: r.itemsUpdatedAt, itemsUpdatedBy: r.itemsUpdatedBy,
         createdAt: r.createdAt, status: r.peers && r.peers.size ? 'active' : (r.status || 'idle'),
         parentWorldId: r.parentWorldId || null, forkName: r.forkName || null,
-        notifiedH3: !!r.notifiedH3,
+        notifiedH3: !!r.notifiedH3, notifiedH7: !!r.notifiedH7, notifiedH30: !!r.notifiedH30,
         lastActivityAt: r.lastActivityAt, lastActivityBy: r.lastActivityBy,
         itemCount: Array.isArray(r.items) ? r.items.length : 0
       };
@@ -336,7 +336,7 @@ const MP_COLORS = [
 
 function makeRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let s = '';
+  let s;
   // Hindari awalan "LAB" agar konsisten dengan normalisasi kode di landing
   // (prefix LAB-XXXX-XX selalu aman dibuang)
   do {
@@ -420,6 +420,7 @@ function joinRoom(socket, room, name, isHost, avatar) {
     username: uniqueName(room, sanitizeName(name)),
     color: color,
     isHost: !!isHost,
+    role: isHost ? 'host' : 'editor', // v5.1 FR-34: host / editor / viewer
     voice: false,
     avatar: sanitizeAvatar(avatar),
     x: 1, y: 1.6, z: 6, rotY: 0
@@ -446,6 +447,7 @@ function joinRoom(socket, room, name, isHost, avatar) {
       uid: socket.id,
       color: color,
       isHost: !!isHost,
+      role: isHost ? 'host' : 'editor',
       username: presence.username
     },
     peers: peersPublic(room).map(p => ({
@@ -583,7 +585,7 @@ let checkpoints = new Map(); // id -> checkpoint immutable (diisi penuh di seksi
           createdAt: s.createdAt || new Date().toISOString(),
           status: s.status || 'idle', // peer transient tidak di-restore
           parentWorldId: s.parentWorldId || null, forkName: s.forkName || null,
-          notifiedH3: !!s.notifiedH3,
+          notifiedH3: !!s.notifiedH3, notifiedH7: !!s.notifiedH7, notifiedH30: !!s.notifiedH30,
           lastActivityAt: s.lastActivityAt || null, lastActivityBy: s.lastActivityBy || null,
           peers: new Map()
         });
@@ -630,6 +632,16 @@ setInterval(() => {
         r.notifiedH3 = true;
         notify('h-3', code, 'Dunia "' + code + '" read-only dalam ~3 hari. Buka untuk mereset.');
         if (OWNER_EMAIL) sendMail(OWNER_EMAIL, '[LabIPA] Dunia ' + code + ' → read-only H-3', 'Terakhir aktif: ' + (r.lastActivityAt || '?'));
+      }
+      if (r.status === 'idle' && days >= 23 && !r.notifiedH7) {
+        r.notifiedH7 = true;
+        notify('h-7', code, 'Dunia "' + code + '" read-only dalam ~7 hari. Buka untuk mereset.');
+        if (OWNER_EMAIL) sendMail(OWNER_EMAIL, '[LabIPA] Dunia ' + code + ' → read-only H-7', 'Terakhir aktif: ' + (r.lastActivityAt || '?'));
+      }
+      if (r.status === 'read-only' && days >= 60 && !r.notifiedH30) {
+        r.notifiedH30 = true;
+        notify('h-30', code, 'Dunia "' + code + '" diarsip dalam ~30 hari.');
+        if (OWNER_EMAIL) sendMail(OWNER_EMAIL, '[LabIPA] Dunia ' + code + ' → arsip H-30', 'Terakhir aktif: ' + (r.lastActivityAt || '?'));
       }
       if (r.status === 'idle' && days >= 30) {
         r.status = 'read-only';
@@ -970,7 +982,7 @@ app.post('/api/worlds/:code/fork', (req, res) => {
   if (!src) return res.status(404).json({ ok: false, error: 'Dunia tidak ditemukan.' });
   const u = authUser(req);
   const body = req.body || {};
-  let nc = '';
+  let nc;
   do { nc = makeRoomCode(); } while (rooms.has(nc));
   const now = new Date().toISOString();
   rooms.set(nc, {
@@ -990,8 +1002,9 @@ app.post('/api/worlds/:code/archive', (req, res) => {
   const code = String(req.params.code || '').toUpperCase().slice(0, 24);
   const room = rooms.get(code);
   if (!room) return res.status(404).json({ ok: false, error: 'Dunia tidak ditemukan.' });
+  const n = Array.isArray(room.items) ? room.items.length : 0;
   archiveWorld(code, 'manual');
-  res.json({ ok: true, meta: worldMeta(room) });
+  res.json({ ok: true, meta: worldMeta(room), archivedCount: n });
 });
 app.post('/api/worlds/:code/restore', (req, res) => {
   const code = String(req.params.code || '').toUpperCase().slice(0, 24);
@@ -1016,6 +1029,7 @@ function archiveDir() {
 function archiveWorld(code, why) {
   const room = rooms.get(code);
   if (!room || room.status === 'archived') return;
+  archiveDir(); // pastikan direktori ada SEBELUM tulis file
   dataWrite(path.join('archive', code + '.json'), { meta: worldMeta(room), items: room.items || [], archivedAt: new Date().toISOString(), why: why });
   try {
     const src = path.join(DATA_DIR, 'archive', code + '.json');
@@ -1048,7 +1062,7 @@ app.get('/api/classes/:classId/members', (req, res) => {
   const members = [];
   if (room) {
     for (const p of room.peers.values()) {
-      members.push({ name: p.username, color: p.color, isHost: !!p.isHost, voice: !!p.voice });
+      members.push({ name: p.username, color: p.color, isHost: !!p.isHost, role: p.role || 'editor', voice: !!p.voice });
     }
   }
   res.json({ ok: true, classId: cid, count: members.length, members: members });
@@ -1072,7 +1086,7 @@ app.get('/api/docs', (req, res) => {
     checkpoints: ['POST /api/worlds/:code/checkpoints', 'GET /api/worlds/:code/checkpoints', 'GET .../checkpoints/:cid', 'POST .../checkpoints/:cid/rollback', 'POST /api/worlds/:code/fork', 'POST /api/worlds/:code/archive', 'POST /api/worlds/:code/restore'],
     oidc: ['GET /.well-known/openid-configuration', 'GET /oidc/jwks', 'GET/POST /oidc/login', 'POST /oidc/token', 'GET /oidc/userinfo'],
     misc: ['GET /api/notifications'],
-    socket: ['room:create', 'room:join', 'room:lock(host)', 'presence:update', 'player:move(alias)',
+    socket: ['room:create', 'room:join', 'room:lock(host)', 'participant:role(host)', 'presence:update', 'player:move(alias)',
       'world:update', 'voice:start/stop/data', 'voice:offer/answer/ice (WebRTC signaling)',
       'peer:join/leave/presence', 'player:join/leave (alias)', 'room:host', 'room:state']
   });
@@ -1242,6 +1256,26 @@ io.on('connection', (socket) => {
     }
   });
 
+    // ---------- PERAN PESERTA (v5.1 FR-34: host/editor/viewer, host only) ----------
+  socket.on('participant:role', (data, cb) => {
+    try {
+      const room = rooms.get(socket.data.roomCode);
+      if (!room) return cb && cb({ ok: false, error: 'Belum join room.' });
+      const me = room.peers.get(socket.id);
+      if (!me || !me.isHost) return cb && cb({ ok: false, error: 'Hanya host yang boleh ubah peran.' });
+      const target = room.peers.get(data && data.to);
+      if (!target) return cb && cb({ ok: false, error: 'Peserta tidak ditemukan.' });
+      const role = String((data && data.role) || '');
+      if (['editor', 'viewer'].indexOf(role) < 0) return cb && cb({ ok: false, error: 'Peran harus editor/viewer.' });
+      if (target.isHost) return cb && cb({ ok: false, error: 'Host tidak bisa diturunkan.' });
+      target.role = role;
+      io.to(room.code).emit('peer:role', { peer: data.to, role: role });
+      cb && cb({ ok: true, role: role });
+    } catch (e) {
+      cb && cb({ ok: false, error: e.message });
+    }
+  });
+
   // ---------- ROOM LOCK (guru/host, PRD v2 FR-07) ----------
   socket.on('room:lock', (data, cb) => {
     try {
@@ -1285,8 +1319,14 @@ io.on('connection', (socket) => {
     if (!room) return;
     if (!Array.isArray(data.items)) return;
     // Sprint 2: dunia read-only/archived menolak edit
+    // v5.1 FR-34: viewer read-only
     if (room.status === 'read-only' || room.status === 'archived') {
       socket.emit('world:denied', { reason: room.status, code: room.code });
+      return;
+    }
+    const sender = room.peers.get(socket.id);
+    if (sender && sender.role === 'viewer') {
+      socket.emit('world:denied', { reason: 'viewer', code: room.code });
       return;
     }
     room.items = data.items;

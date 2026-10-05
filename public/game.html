@@ -873,6 +873,8 @@ canvas{display:block}
 .mp-nameRow{display:flex;gap:6px;padding:6px 8px 0}
 .mp-nameRow button{flex:1;border:1px solid var(--rule-soft);background:transparent;color:var(--ink);font-family:var(--mono);font-size:10px;padding:4px 0;cursor:pointer;border-radius:3px}
 .mp-nameRow button:hover{border-color:var(--safety);color:var(--safety)}
+.role-btn{border:none;background:transparent;cursor:pointer;font-size:11px;padding:0 2px}
+.role-btn:hover{filter:brightness(1.3)}
 #liveBadge{display:none;font-family:var(--mono);font-size:10px;font-weight:700;color:#fff;background:#B91C1C;border-radius:3px;padding:2px 6px;margin-left:6px;letter-spacing:.08em}
 #liveBadge.on{display:inline-block;animation:micPulse .8s ease-in-out infinite alternate}
 #voiceQ{display:inline-block;width:8px;height:8px;border-radius:50%;background:#8A939B;margin-left:4px;vertical-align:baseline}
@@ -899,6 +901,10 @@ canvas{display:block}
 #gateBanner.on{display:block}
 #netBanner{display:none;position:fixed;top:54px;left:50%;transform:translateX(-50%);z-index:9000;background:#2A4A78;color:#fff;font-family:IBM Plex Mono,monospace;font-size:11px;padding:8px 16px;border-radius:4px}
 #netBanner.on{display:block}
+#saveState{font-size:10px;color:#8A939B}
+#saveState.sv-saving{color:#D97706}
+#saveState.sv-saved{color:#2E7D32}
+#saveState.sv-offline{color:#B91C1C}
 #worldModal,#conflictModal{position:fixed;inset:0;z-index:9500;background:rgba(27,42,65,.55);display:flex;align-items:center;justify-content:center}
 .wm-card{width:min(480px,92vw);max-height:84vh;overflow-y:auto;background:#EDE7D3;border:1px solid #1B2A41;border-radius:8px;padding:18px;color:#1B2A41}
 .wm-head{display:flex;justify-content:space-between;align-items:center;font-family:IBM Plex Mono,monospace;font-weight:700;margin-bottom:8px}
@@ -1466,6 +1472,7 @@ div[data-mppanel="solo"] .cover-cta{
   <button class="tb-btn icon-only" id="btnDownload" title="Download HTML layout (D)">
     <span class="ico">📄</span>
   </button>
+  <span id="saveState" class="sv-idle" title="Status simpan">●</span>
 
   <div class="sep"></div>
 
@@ -2565,7 +2572,8 @@ const PHYS={
       aabb:o.aabb||{w:.3,h:.3,d:.3},grounded:true,
       label:o.label||'benda',itemKey:o.itemKey||null,
       type:o.type||'tool',adhesive:o.adhesive||'floor',
-      stuck:false,stuckSurface:null,rotY:mesh.rotation.y||0};
+      stuck:false,stuckSurface:null,rotY:mesh.rotation.y||0,
+      by:o.by||null,byMod:o.byMod||null};
     this.bodies.push(b);
     if(o.itemKey&&CONTACT_ITEMS.indexOf(o.itemKey)>=0&&o.aabb){
       addContactShadow(mesh,Math.max(o.aabb.w,o.aabb.d)*0.72);
@@ -2712,7 +2720,8 @@ const PHYS={
     return this.bodies.map(function(b){
       return {itemKey:b.itemKey,
         pos:{x:b.mesh.position.x,y:b.mesh.position.y,z:b.mesh.position.z},
-        rotY:b.mesh.rotation.y,stuck:b.stuck,stuckSurface:b.stuckSurface};
+        rotY:b.mesh.rotation.y,stuck:b.stuck,stuckSurface:b.stuckSurface,
+        by:b.by||null,byMod:b.byMod||null};
     });
   }
 };
@@ -3714,6 +3723,8 @@ function renderInspector(){
       '<span class="lbl">Rotasi</span><span class="val">'+rot+'°</span>'+
       '<span class="lbl">Tempel</span><span class="val">'+(b.stuckSurface==='support'?'meja/lemari':(b.stuckSurface||'—'))+'</span>'+
       '<span class="lbl">Ukuran</span><span class="val">'+b.aabb.w+' × '+b.aabb.h+' × '+b.aabb.d+' m</span>'+
+      (b.by?'<span class="lbl">Dibuat</span><span class="val">'+escName(b.by)+'</span>':'')+
+      (b.byMod&&b.byMod!==b.by?'<span class="lbl">Diubah</span><span class="val">'+escName(b.byMod)+'</span>':'')+
     '</div>'+
     '<div class="insp-actions">'+
       '<button data-act="rotL">⟲ −15°</button>'+
@@ -3865,6 +3876,8 @@ function startPlacement(itemKey){
   try{if(window.LabIPA&&window.LabIPA.isViewer&&window.LabIPA.isViewer()){showToast('Mode menonton — Live Edit guru sedang berjalan');return;}}catch(e){}
   // Sprint 5 FR-42: tab kedua = read-only
   try{if(window.LABIPA_SECOND_TAB){showToast('Tab kedua mode menonton — edit di tab utama');return;}}catch(e){}
+  // v5.1 FR-34: peran viewer = read-only
+  try{if(typeof MP!=='undefined'&&MP.myRole==='viewer'){showToast('Peranmu viewer — read-only');return;}}catch(e){}
   if(PLACEMENT.active)cancelPlacement();
   const def=MAKERS[itemKey];if(!def)return;
   PLACEMENT.active=true;PLACEMENT.item=itemKey;PLACEMENT.rotY=0;PLACEMENT.dist=2.4;
@@ -3973,7 +3986,8 @@ function confirmPlacement(){
   real.position.copy(pos);real.rotation.set(0,ghostRotY,0);
   scene.add(real);
   const b=PHYS.add(real,{label:def.label,aabb:def.aabb,type:def.type,
-    itemKey:PLACEMENT.item,rest:0.15,fric:0.85,adhesive:effSnap});
+    itemKey:PLACEMENT.item,rest:0.15,fric:0.85,adhesive:effSnap,
+    by:(typeof MP!=='undefined'&&MP.username)?MP.username:'solo'});
 
   if(effSnap==='wall'&&nearWall&&wallsnap.wall){
     const mountBottomY=(WALL_MOUNT[PLACEMENT.item]!==undefined)?WALL_MOUNT[PLACEMENT.item]:0;
@@ -4033,7 +4047,7 @@ playerMesh.visible=false;scene.add(playerMesh);
 const MP_COLORS=['#3D7EA6','#D97706','#2E5C3E','#8B1E1E','#5D4A34','#4B3A2A','#2A4A78','#B8892B','#7A3E68','#3F6B34','#8A939B','#424242'];
 const MP={
   socket:null,ready:false,enabled:false,
-  code:null,username:'',color:MP_COLORS[0],isHost:false,
+  code:null,username:'',color:MP_COLORS[0],isHost:false,myRole:'editor',
   maxPlayers:6,uid:null,
   peers:new Map(),           // sid -> presence
   avatars:new Map(),         // sid -> avatar object
@@ -4174,6 +4188,7 @@ function mpPostStateToParent(){
     MP.code=state.code;
     MP.maxPlayers=state.maxPlayers;
     MP.isHost=!!(state.you&&state.you.isHost);
+    MP.myRole=(state.you&&state.you.role)||(MP.isHost?'host':'editor');
     MP.color=(state.you&&state.you.color)||MP_COLORS[0];
     if(state.you&&state.you.username)MP.username=state.you.username;
     // Ingat intent terakhir utk auto-rejoin saat reconnect (BUG konektivitas).
@@ -4269,6 +4284,18 @@ function mpPostStateToParent(){
   MP.socket.on('room:locked',(m)=>{
     showToast(m&&m.locked?'Room dikunci host':'Room dibuka host');
   });
+  // v5.1 FR-34: perubahan peran (host dapat ubah editor↔viewer)
+  MP.socket.on('peer:role',(m)=>{
+    if(!m||!m.peer)return;
+    if(m.peer===MP.uid){
+      MP.myRole=m.role;
+      showToast(m.role==='viewer'?'Peranmu: VIEWER (read-only)':'Peranmu: EDITOR');
+    }else{
+      const p=MP.peers.get(m.peer);
+      if(p)p.role=m.role;
+    }
+    mpRenderPlayerList();
+  });
 
   MP.socket.on('peer:presence',(m)=>{
     const p=MP.peers.get(m.peer);
@@ -4315,7 +4342,8 @@ function mpSetLiveBadge(on){
   });
   // Sprint 2: server menolak edit di dunia read-only/archived
   MP.socket.on('world:denied',(m)=>{
-    showToast('Dunia '+(m&&m.reason==='archived'?'diarsip (read-only)':'read-only')+' — edit ditolak. Fork untuk mengedit.');
+    const r=m&&m.reason;
+    showToast(r==='viewer'?'Viewer read-only — edit ditolak.':('Dunia '+(r||'read-only')+' — edit ditolak. Fork untuk mengedit.'));
   });
 })();
 
@@ -4428,6 +4456,7 @@ function mpLeaveRoom(){
   try{if(MP.socket)MP.socket.disconnect();}catch(e){}
   const leftCode=MP.code;
   MP.code=null;MP.enabled=false;MP.ready=false;MP.lastIntent=null;
+  MP.myRole='editor';
   MP.peers.clear();
   try{MP.avatars.forEach(function(av){scene.remove(av.group);});}catch(e){}
   MP.avatars.clear();
@@ -4464,7 +4493,22 @@ document.getElementById('mpLockBtn').addEventListener('click',function(){
     else showToast('Gagal: '+((res&&res.error)||'coba lagi'));
   });
 });
-// PRD v2 client hooks: migrasi legacy, autosave 30 dtk, flush antrean, ?class=
+// v5.1 FR-34: host ubah peran via tombol ⚙ di roster (delegasi sekali)
+if(!window._mpRoleWired){
+  window._mpRoleWired=true;
+  document.getElementById('mpPlayers').addEventListener('click',function(e){
+    const b=e.target&&e.target.closest?e.target.closest('.role-btn'):null;
+    if(!b||!MP.socket||!MP.code||!MP.isHost)return;
+    const sid=b.dataset.peer;
+    const pres=MP.peers.get(sid);
+    if(!pres||pres.isHost)return;
+    const next=((pres.role||'editor')==='editor')?'viewer':'editor';
+    MP.socket.emit('participant:role',{to:sid,role:next},function(res){
+      if(res&&res.ok)showToast(pres.username+' → '+next);
+      else showToast('Gagal: '+((res&&res.error)||''));
+    });
+  });
+}
 (function labipaBackendHooks(){
   if(!window.LabIPA)return;
   try{window.LabIPA.Storage.migrateIfNeeded();}catch(e){}
@@ -4490,9 +4534,12 @@ document.getElementById('mpLockBtn').addEventListener('click',function(){
         const fp=mpComputeFingerprint();
         if(fp===lastFp)return;
         lastFp=fp;
+        labipaSaveState('saving','Autosave…');
         window.LabIPA.Storage.save({name:'Layout Lab',items:PHYS.serialize()}).then(function(r){
           if(r&&!r.offline){try{window.LabIPA.Storage.currentVersion=r.version;}catch(e){}}
+          labipaSaveState(r&&r.offline?'offline':'saved',r&&r.offline?'Offline — tersinkron nanti':'Autosave '+new Date().toLocaleTimeString('id-ID'));
         }).catch(function(e){
+          labipaSaveState('offline','Autosave gagal');
           if(e&&e.status===409)showToast('Konflik versi — klik Muat untuk sinkron!');
         });
       }catch(e){}
@@ -4802,9 +4849,9 @@ function mpApplyRemoteWorldState(items){
     real.position.set(it.pos.x,0,it.pos.z);   // abaikan pos.y dari snapshot
     real.rotation.set(0,it.rotY||0,0);
     scene.add(real);
-    const b=PHYS.add(real,{label:def.label,aabb:def.aabb,type:def.type,
-      itemKey:it.itemKey,rest:0.15,fric:0.85,
-      adhesive:it.stuckSurface||'floor'});
+      const b=PHYS.add(real,{label:def.label,aabb:def.aabb,type:def.type,
+        itemKey:it.itemKey,rest:0.15,fric:0.85,
+        adhesive:it.stuckSurface||'floor',by:it.by||null,byMod:it.byMod||null});
 
     if(it.stuck && it.stuckSurface==='wall'){
       const halfSpan=Math.max(def.aabb.w,def.aabb.d)/2;
@@ -5021,6 +5068,11 @@ function mpSavePlayerName(n){
   try{localStorage.setItem('labipa_player',JSON.stringify({name:n||'Pemain'}));}catch(e){}
 }
 // ---------- HUD PLAYER LIST ----------
+function mpRoleBadge(pres,isSelf){
+  const r=isSelf?(MP.myRole||'editor'):((pres&&pres.role)||'editor');
+  if(r==='viewer')return '<span class="crown" title="viewer (read-only)">👁</span>';
+  return '';
+}
 function mpRenderPlayerList(){
   const el=document.getElementById('mpPlayers');if(!el)return;
   let html=
@@ -5028,14 +5080,17 @@ function mpRenderPlayerList(){
       '<span class="dot" style="background:'+MP.color+'"></span>'+
       '<span class="nm">'+escName(MP.username||'Kamu')+' (kamu)</span>'+
       (MP.isHost?'<span class="crown">👑</span>':'')+
+      mpRoleBadge(null,true)+
       (VOICE.speakingLocal?'<span class="crown" title="sedang bicara">🔊</span>':'')+
       (VOICE.capturing?'<span class="crown" title="mic aktif">🎙</span>':'')+
     '</div>';
-  MP.peers.forEach(function(pres){
+  MP.peers.forEach(function(pres,sid){
     html+=
       '<div class="mp-player">'+
         '<span class="dot" style="background:'+(pres.color||'#3D7EA6')+'"></span>'+
         '<span class="nm">'+escName(pres.username||'Pemain')+'</span>'+
+        mpRoleBadge(pres,false)+
+        (MP.isHost&&!pres.isHost?'<button class="role-btn" data-peer="'+sid+'" title="Ubah peran editor/viewer">⚙</button>':'')+
         (pres.isHost?'<span class="crown">👑</span>':'')+
         (VOICE.speakingPeers.has(pres.uid)?'<span class="crown" title="sedang bicara">🔊</span>':'')+
         (pres.voice?'<span class="crown" title="mic aktif">🎙</span>':'')+
@@ -5907,6 +5962,13 @@ const LS_CACHE_KEY='labipa.cache.layout.v1';
 function labipaAdapter(){ try{return (window.LabIPA&&window.LabIPA.Storage)||null;}catch(e){return null;} }
 function labipaCacheWrite(items){
   try{localStorage.setItem(LS_CACHE_KEY,JSON.stringify({v:2,items:items,ts:Date.now()}));}catch(e){}
+  // v3.0 FR-11: draft IndexedDB per session (sessionId = kode room / 'solo')
+  try{
+    if(window.LabIPA&&window.LabIPA.Wal){
+      const sid=(typeof MP!=='undefined'&&MP.code)?MP.code:'solo';
+      window.LabIPA.Wal.draftPut(sid,{items:items});
+    }
+  }catch(e){}
 }
 function labipaCacheRead(){
   try{
@@ -5916,22 +5978,33 @@ function labipaCacheRead(){
     return (d&&d.items)?d.items:null;
   }catch(e){return null;}
 }
+// FR-11 v3.0: indikator saving / saved / offline
+function labipaSaveState(s, tip){
+  try{
+    const el=document.getElementById('saveState');
+    if(!el)return;
+    el.className='sv-'+s;
+    el.title=tip||('Autosave: '+s);
+  }catch(e){}
+}
 function saveLayout(){
   try{
     const items=PHYS.serialize();
     const adapter=labipaAdapter();
     labipaCacheWrite(items);
+    labipaSaveState('saving','Menyimpan…');
     if(adapter){
       adapter.save({name:'Layout Lab',items:items}).then(function(r){
-        if(r&&r.offline)showToast('Disimpan offline ('+items.length+' item) — tersinkron nanti');
-        else showToast('Disimpan ke server ('+items.length+' item, v'+(r&&r.version||'?')+')');
+        if(r&&r.offline){labipaSaveState('offline','Offline — tersinkron nanti');showToast('Disimpan offline ('+items.length+' item) — tersinkron nanti');}
+        else{labipaSaveState('saved','Tersimpan '+new Date().toLocaleTimeString('id-ID'));showToast('Disimpan ke server ('+items.length+' item, v'+(r&&r.version||'?')+')');}
       }).catch(function(e){
         // Sprint 5: konflik → modal pilihan (bukan toast)
-        if(e&&e.status===409){labipaShowConflict(items,(e.body&&e.body.current)||null);}
-        else showToast('Gagal simpan server, cache lokal dipakai');
+        if(e&&e.status===409){labipaSaveState('saving','Konflik versi');labipaShowConflict(items,(e.body&&e.body.current)||null);}
+        else{labipaSaveState('offline','Gagal — cache lokal');showToast('Gagal simpan server, cache lokal dipakai');}
       });
       return;
     }
+    labipaSaveState('saved','Tersimpan lokal');
     showToast('Disimpan ('+items.length+' item)');
   }catch(e){showToast('Gagal simpan: '+e.message);}
 }

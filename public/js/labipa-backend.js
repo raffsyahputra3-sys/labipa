@@ -338,8 +338,14 @@ var WalDB = {
     return new Promise(function (res) {
       try {
         if (!('indexedDB' in window)) return res(null);
-        var rq = indexedDB.open('labipa-wal', 1);
-        rq.onupgradeneeded = function () { try { rq.result.createObjectStore('ops'); } catch (e) {} };
+        var rq = indexedDB.open('labipa-wal', 2);
+        rq.onupgradeneeded = function () {
+          try {
+            if (!rq.result.objectStoreNames.contains('ops')) rq.result.createObjectStore('ops');
+            // v3.0 FR-11: store drafts keyPath sessionId
+            if (!rq.result.objectStoreNames.contains('drafts')) rq.result.createObjectStore('drafts', { keyPath: 'sessionId' });
+          } catch (e) {}
+        };
         rq.onsuccess = function () { WalDB.db = rq.result; res(rq.result); };
         rq.onerror = function () { res(null); };
       } catch (e) { res(null); }
@@ -364,6 +370,37 @@ var WalDB = {
       return new Promise(function (res) {
         try {
           var rq = db.transaction('ops', 'readonly').objectStore('ops').get('latest');
+          rq.onsuccess = function () { res(rq.result || null); };
+          rq.onerror = function () { res(null); };
+        } catch (e) { res(null); }
+      });
+    });
+  },
+  // v3.0 FR-11: draft per session {sessionId, assignmentId, items, lastModified, syncedAt, syncedVersion}
+  draftPut: function (sessionId, doc) {
+    try { WalDB.putLatest(doc.items); } catch (e) {}
+    return WalDB.open().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (res) {
+        try {
+          var tx = db.transaction('drafts', 'readwrite');
+          tx.objectStore('drafts').put({
+            sessionId: sessionId, assignmentId: doc.assignmentId || null,
+            items: doc.items, lastModified: Date.now(),
+            syncedAt: doc.syncedAt || null, syncedVersion: doc.syncedVersion || null
+          });
+          tx.oncomplete = function () { res(true); };
+          tx.onerror = function () { res(false); };
+        } catch (e) { res(false); }
+      });
+    });
+  },
+  draftGet: function (sessionId) {
+    return WalDB.open().then(function (db) {
+      if (!db) return null;
+      return new Promise(function (res) {
+        try {
+          var rq = db.transaction('drafts', 'readonly').objectStore('drafts').get(sessionId);
           rq.onsuccess = function () { res(rq.result || null); };
           rq.onerror = function () { res(null); };
         } catch (e) { res(null); }

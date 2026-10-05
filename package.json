@@ -8,7 +8,9 @@
   },
   "scripts": {
     "start": "node server.js",
-    "lint": "eslint server.js scripts/ public/js/ 2>&1 | head -50",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "lint": "eslint server.js server/ scripts/ tests/ public/js/",
+    "lint:fix": "eslint server.js server/ scripts/ tests/ public/js/ --fix",
     "rotate-key": "node scripts/gate-cli.js rotate",
     "reset-key": "node scripts/gate-cli.js reset",
     "verify-key": "node scripts/gate-cli.js verify"
@@ -16,5 +18,11 @@
   "dependencies": {
     "express": "^4.19.2",
     "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.13.0",
+    "socket.io-client": "^4.8.4"
   }
 }
