@@ -4258,6 +4258,7 @@ function combatSet(on){
   combatRenderHud();
   if(COMBAT.on){
     if(!MP.enabled)combatSpawnDummies();
+    combatPew(); // preview: kalau ini bunyi = audio jalan, tinggal nembak
     showToast(camMode==='fps'?'🔫 MODE TEMBAK ON — klik untuk nembak!':'🔫 MODE TEMBAK ON — pindah ke mode FPS (F) untuk nembak!');
   }else{
     combatClearDummies();
@@ -4296,26 +4297,44 @@ function combatFeed(html){
     setTimeout(function(){try{if(d.parentNode)d.parentNode.removeChild(d);}catch(e){}},4200);
   }catch(e){}
 }
-function combatPew(){
+// Audio dibuka/di-resume saat ada gesture (klik/tombol) agar tak diblokir
+// autoplay policy browser. combatAudio() hanya mengembalikan context yang
+// sudah running — bunyi tak pernah dijadwalkan ke context yang bisu.
+function combatAudio(){
   try{
     if(!COMBAT.audio){
       const AC=window.AudioContext||window.webkitAudioContext;
-      if(!AC)return;
+      if(!AC)return null;
       COMBAT.audio=new AC();
     }
     const ctx=COMBAT.audio;
-    if(ctx.state==='suspended'){try{ctx.resume();}catch(e){}}
-    const t=ctx.currentTime;
+    if(ctx.state==='suspended'){try{ctx.resume();}catch(e){}return null;}
+    if(ctx.state!=='running')return null;
+    return ctx;
+  }catch(e){return null;}
+}
+// Unlock global: klik/tombol APAPUN membangunkan audio duluan, jadi
+// tembakan pertama pun langsung bunyi (tak tergantung klik tembak).
+document.addEventListener('pointerdown',function(){combatAudio();});
+document.addEventListener('keydown',function(){combatAudio();});
+function combatTone(f0,f1,dur,type,vol,delay){
+  const ctx=combatAudio();
+  if(!ctx)return;
+  try{
+    const t=ctx.currentTime+(delay||0);
     const osc=ctx.createOscillator(),g=ctx.createGain();
-    osc.type='square';
-    osc.frequency.setValueAtTime(740,t);
-    osc.frequency.exponentialRampToValueAtTime(160,t+0.11);
-    g.gain.setValueAtTime(0.07,t);
-    g.gain.exponentialRampToValueAtTime(0.001,t+0.12);
+    osc.type=type||'square';
+    osc.frequency.setValueAtTime(Math.max(1,f0),t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1,f1),t+dur);
+    g.gain.setValueAtTime(vol||0.12,t);
+    g.gain.exponentialRampToValueAtTime(0.001,t+dur+0.02);
     osc.connect(g);g.connect(ctx.destination);
-    osc.start(t);osc.stop(t+0.13);
+    osc.start(t);osc.stop(t+dur+0.05);
   }catch(e){}
 }
+function combatPew(){combatTone(740,160,0.11,'square',0.14);}
+function combatHitSound(){combatTone(1250,900,0.07,'square',0.11,0.02);}
+function combatDieSound(){combatTone(320,55,0.45,'sawtooth',0.14);}
 // Tembakan hitscan: cari objek terdekat di garis tembak.
 // Urutan otomatis benar karena raycast terurut jarak: avatar/dummy yang
 // tertutup item TIDAK kena (item = tameng). Mesh tak terlihat (ghost,
@@ -4423,10 +4442,12 @@ function combatShoot(){
   if(hit.kind==='peer'){
     combatSpawnSpark(hit.point,0xef4444);
     combatFlashHitmark(false);
+    combatHitSound();
     if(inRoom){try{MP.socket.emit('combat:hit',{to:hit.sid,damage:COMBAT.damage});}catch(e){}}
   }else if(hit.kind==='dummy'){
     combatSpawnSpark(hit.point,0xf59e0b);
     combatFlashHitmark(false);
+    combatHitSound();
     combatDamageDummy(hit.dummy,COMBAT.damage);
   }else if(hit.kind==='item'){
     combatSpawnSpark(hit.point,0xfde68a);
@@ -4496,6 +4517,7 @@ function combatDie(m){
   if(!COMBAT.alive)return;
   COMBAT.alive=false;COMBAT.hp=0;COMBAT.deaths++;
   combatRenderHud();
+  combatDieSound();
   try{
     document.getElementById('deathSub').textContent=
       'Dikalahkan '+(m&&m.fromName?m.fromName:'')+' — respawn 3…';
