@@ -475,6 +475,8 @@ function joinRoom(socket, room, name, isHost, avatar, userRole) {
     userRole: claimedRole, // 'guru' / 'siswa' / null — untuk suksesi host room kelas
     voice: false,
     avatar: sanitizeAvatar(avatar),
+    // Mode tembak: tiap peserta punya HP. Mati → respawn otomatis 3 dtk.
+    hp: 100, alive: true, kills: 0, deaths: 0,
     x: 1, y: 1.6, z: 6, rotY: 0
   };
   room.peers.set(socket.id, presence);
@@ -500,7 +502,8 @@ function joinRoom(socket, room, name, isHost, avatar, userRole) {
       color: color,
       isHost: !!isHost,
       role: isHost ? 'host' : 'editor',
-      username: presence.username
+      username: presence.username,
+      hp: 100, alive: true, kills: 0, deaths: 0
     },
     peers: peersPublic(room).map(p => ({
       peer: p.peer,
@@ -1235,8 +1238,9 @@ app.get('/api/docs', (req, res) => {
     oidc: ['GET /.well-known/openid-configuration', 'GET /oidc/jwks', 'GET/POST /oidc/login', 'POST /oidc/token', 'GET /oidc/userinfo'],
     misc: ['GET /api/notifications'],
     socket: ['room:create', 'room:join', 'room:lock(host)', 'participant:role(host)', 'presence:update', 'player:move(alias)',
-      'world:update', 'voice:start/stop/data', 'voice:offer/answer/ice (WebRTC signaling)',
-      'peer:join/leave/presence', 'player:join/leave (alias)', 'room:host', 'room:state']
+      'world:update', 'combat:shoot/hit (mode tembak: HP/kill/respawn)', 'voice:start/stop/data', 'voice:offer/answer/ice (WebRTC signaling)',
+      'peer:join/leave/presence', 'player:join/leave (alias)', 'room:host', 'room:state',
+      'combat:hit/killed/respawn (siaran HP)']
   });
 });
 
@@ -1527,6 +1531,97 @@ io.on('connection', (socket) => {
       itemsUpdatedAt: room.itemsUpdatedAt,
       itemsUpdatedBy: room.itemsUpdatedBy
     });
+  });
+
+  // =============================================================
+  // MODE TEMBAK — relay tembakan + HP otoritatif server.
+  // - combat:shoot: siaran asal/arah peluru (tracer digambar tiap client).
+  //   Rate-limit 120 mdtk/tembakan agar tak di-spam.
+  // - combat:hit: penembak melapor kena {to, damage}; server yang
+  //   mengurangi HP, menyiarkan sisa HP, kill, lalu respawn otomatis.
+  // Item lab (meja/lemari/dll) jadi penghalang DI SISI CLIENT (raycast):
+  // peluru yang kena item dulu tidak sampai ke pemain → tak ada hit.
+  // =============================================================
+  const COMBAT_COOLDOWN_MS = 120;
+  const COMBAT_RESPAWN_MS = 3000;
+  function combatNum(v, fallback) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  socket.on('combat:shoot', (data, cb) => {
+    cb = ack(cb); data = obj(data);
+    try {
+      const room = rooms.get(socket.data.roomCode);
+      if (!room) return cb({ ok: false, error: 'Belum join room.' });
+      const me = room.peers.get(socket.id);
+      if (!me) return cb({ ok: false, error: 'Bukan peserta room.' });
+      if (!me.alive) return cb({ ok: false, error: 'Kamu sedang tumbang.' });
+      const now = Date.now();
+      if (socket.data.lastShotAt && now - socket.data.lastShotAt < COMBAT_COOLDOWN_MS) {
+        return cb({ ok: false, error: 'Terlalu cepat.' });
+      }
+      socket.data.lastShotAt = now;
+      const o = obj(data.origin); const d = obj(data.dir);
+      const origin = { x: combatNum(o.x, 0), y: combatNum(o.y, 1.6), z: combatNum(o.z, 0) };
+      let dir = { x: combatNum(d.x, 0), y: combatNum(d.y, 0), z: combatNum(d.z, -1) };
+      const len = Math.sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z) || 1;
+      dir = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
+      socket.to(room.code).emit('combat:shoot', {
+        from: socket.id, fromName: me.username, origin: origin, dir: dir, t: now
+      });
+      cb({ ok: true });
+    } catch (e) {
+      cb({ ok: false, error: e.message });
+    }
+  });
+
+  socket.on('combat:hit', (data, cb) => {
+    cb = ack(cb); data = obj(data);
+    try {
+      const room = rooms.get(socket.data.roomCode);
+      if (!room) return cb({ ok: false, error: 'Belum join room.' });
+      const me = room.peers.get(socket.id);
+      if (!me) return cb({ ok: false, error: 'Bukan peserta room.' });
+      if (!me.alive) return cb({ ok: false, error: 'Kamu sedang tumbang.' });
+      const target = room.peers.get(data.to);
+      if (!target) return cb({ ok: false, error: 'Target tidak ada.' });
+      if (!target.alive) return cb({ ok: false, error: 'Target sudah tumbang.' });
+      let dmg = Math.round(combatNum(data.damage, 20));
+      if (!Number.isFinite(dmg)) dmg = 20;
+      dmg = Math.max(1, Math.min(50, dmg));
+      target.hp = Math.max(0, (typeof target.hp === 'number' ? target.hp : 100) - dmg);
+      let killed = false;
+      if (target.hp <= 0) {
+        target.hp = 0; target.alive = false; killed = true;
+        target.deaths = (target.deaths || 0) + 1;
+        if (data.to !== socket.id) me.kills = (me.kills || 0) + 1;
+      }
+      io.to(room.code).emit('combat:hit', {
+        from: socket.id, fromName: me.username,
+        to: data.to, victimName: target.username,
+        damage: dmg, hp: target.hp, alive: target.alive, killed: killed
+      });
+      if (killed) {
+        io.to(room.code).emit('combat:killed', {
+          by: socket.id, byName: me.username,
+          victim: data.to, victimName: target.username
+        });
+        const victimId = data.to;
+        setTimeout(() => {
+          try {
+            const r = rooms.get(room.code);
+            if (!r) return;
+            const p = r.peers.get(victimId);
+            if (!p || p.alive) return;
+            p.hp = 100; p.alive = true;
+            io.to(r.code).emit('combat:respawn', { peer: victimId, hp: 100 });
+          } catch (e) {}
+        }, COMBAT_RESPAWN_MS);
+      }
+      cb({ ok: true, hp: target.hp, killed: killed });
+    } catch (e) {
+      cb({ ok: false, error: e.message });
+    }
   });
 
   // =============================================================

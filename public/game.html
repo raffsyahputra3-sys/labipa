@@ -162,6 +162,66 @@ canvas{display:block}
   background:var(--safety);transform:translate(-50%,-50%);
   box-shadow:0 0 6px var(--safety);
 }
+/* MODE TEMBAK: crosshair merah saat tempur */
+#viewWrap.combat #crosshair::before,#viewWrap.combat #crosshair::after{background:rgba(255,120,120,.95)}
+#viewWrap.combat #crosshair .cd{background:#ef4444;box-shadow:0 0 8px #ef4444}
+.tb-btn.combat-on{
+  background:linear-gradient(180deg,#ef4444,#b91c1c);
+  color:#fff;border-color:#f87171;
+  box-shadow:0 0 0 1px rgba(239,68,68,.4),0 4px 12px rgba(239,68,68,.35);
+}
+/* MODE TEMBAK — HUD nyawa + killfeed + overlay mati */
+#hpHud{
+  position:absolute;left:50%;bottom:52px;transform:translateX(-50%);
+  z-index:15;pointer-events:none;display:none;
+  align-items:center;gap:8px;
+  background:rgba(15,22,32,.78);border:1px solid var(--chrome-rule-2);
+  border-radius:9px;padding:7px 12px;
+  font-family:var(--sans);font-size:12px;font-weight:700;color:#F5F0E0;
+}
+#viewWrap.combat #hpHud{display:flex}
+#hpHud .hp-ico{font-size:14px}
+#hpBarWrap{width:170px;height:10px;border-radius:6px;background:#1f2937;overflow:hidden}
+#hpBar{height:100%;width:100%;border-radius:6px;background:#22c55e;transition:width .15s}
+#hpHud .kd{font-family:var(--mono);font-size:11px;color:#cbd5e1;font-weight:600}
+#hitmark{
+  position:absolute;top:50%;left:50%;width:26px;height:26px;
+  transform:translate(-50%,-50%) rotate(45deg);
+  pointer-events:none;z-index:15;opacity:0;
+}
+#hitmark::before,#hitmark::after{content:'';position:absolute;background:#fff;box-shadow:0 0 6px #ef4444}
+#hitmark::before{left:50%;top:0;width:2px;height:100%;transform:translateX(-50%)}
+#hitmark::after{top:50%;left:0;height:2px;width:100%;transform:translateY(-50%)}
+#hitmark.show{animation:hitpop .25s ease-out}
+#hitmark.kill::before,#hitmark.kill::after{background:#ef4444}
+@keyframes hitpop{0%{opacity:1;transform:translate(-50%,-50%) rotate(45deg) scale(1.5)}100%{opacity:0;transform:translate(-50%,-50%) rotate(45deg) scale(.8)}}
+#dmgFlash{
+  position:absolute;inset:0;pointer-events:none;z-index:14;opacity:0;
+  background:radial-gradient(ellipse at center,transparent 45%,rgba(220,38,38,.55) 100%);
+}
+#dmgFlash.show{animation:dmgfade .5s ease-out}
+@keyframes dmgfade{0%{opacity:1}100%{opacity:0}}
+#killfeed{
+  position:absolute;top:64px;left:14px;z-index:15;pointer-events:none;
+  display:flex;flex-direction:column;gap:5px;max-width:280px;
+}
+#killfeed .kf{
+  background:rgba(15,22,32,.8);border-left:3px solid #ef4444;
+  color:#F5F0E0;font-size:11.5px;font-weight:600;
+  padding:5px 9px;border-radius:0 7px 7px 0;
+  animation:kfin .2s ease-out;
+}
+@keyframes kfin{from{transform:translateX(-12px);opacity:0}to{transform:none;opacity:1}}
+#deathOverlay{
+  position:absolute;inset:0;z-index:30;display:none;
+  align-items:center;justify-content:center;flex-direction:column;gap:8px;
+  background:rgba(20,5,5,.72);text-align:center;
+}
+#deathOverlay.on{display:flex}
+#deathOverlay .skull{font-size:46px}
+#deathOverlay .t1{font-family:var(--sans);font-size:22px;font-weight:800;color:#fecaca;letter-spacing:.06em}
+#deathOverlay .t2{font-family:var(--mono);font-size:13px;color:#fca5a5}
+.mp-player .hp{color:#f87171;font-weight:700;font-size:11px;margin-left:4px}
 
 /* ==================================================
    INSPECTOR
@@ -1447,6 +1507,9 @@ div[data-mppanel="solo"] .cover-cta{
     <button class="tb-btn accent" id="btnStd" title="Cek kesesuaian standar">
       <span class="ico">✓</span><span class="lbl-txt">Cek Standar</span>
     </button>
+    <button class="tb-btn" id="btnCombat" title="Mode tembak: klik untuk nembak (G)">
+      <span class="ico">🔫</span><span class="lbl-txt">Tembak</span>
+    </button>
   </div>
 
   <div class="spacer"></div>
@@ -1497,7 +1560,21 @@ div[data-mppanel="solo"] .cover-cta{
   <div id="viewWrap">
     <div id="crosshair"><span class="cd"></span></div>
     <div id="vignette"></div>
+    <div id="dmgFlash"></div>
+    <div id="hitmark"></div>
     <div id="placeHint"></div>
+    <div id="hpHud" aria-live="polite">
+      <span class="hp-ico">❤</span>
+      <div id="hpBarWrap"><div id="hpBar"></div></div>
+      <span id="hpText">100</span>
+      <span class="kd" id="kdText">0 kill · 0 mati</span>
+    </div>
+    <div id="killfeed"></div>
+    <div id="deathOverlay">
+      <div class="skull">☠</div>
+      <div class="t1">KAMU TUMBANG</div>
+      <div class="t2" id="deathSub">Respawn 3…</div>
+    </div>
 
     <aside id="inspector" aria-live="polite">
       <div class="insp-head">
@@ -1532,6 +1609,7 @@ div[data-mppanel="solo"] .cover-cta{
     <div id="hint">
       <span class="k">WASD</span><span class="txt">jalan ·</span>
       <span class="k">SHIFT</span><span class="txt">lari ·</span>
+      <span class="k">G</span><span class="txt">tembak ·</span>
       <span class="k">I</span><span class="txt">katalog ·</span>
       <span class="k">H</span><span class="txt">info</span>
     </div>
@@ -1654,6 +1732,8 @@ div[data-mppanel="solo"] .cover-cta{
         <div class="k-row"><span class="kk">W A S D</span><span class="kd">Gerak (semua mode)</span></div>
         <div class="k-row"><span class="kk">SHIFT</span><span class="kd">Lari</span></div>
         <div class="k-row"><span class="kk">SPACE</span><span class="kd">Lompat (FPS)</span></div>
+        <div class="k-row"><span class="kk">G</span><span class="kd">Mode tembak on/off</span></div>
+        <div class="k-row"><span class="kk">KLIK (FPS)</span><span class="kd">Tembak — item lab jadi tameng</span></div>
         <div class="k-row"><span class="kk">KLIK</span><span class="kd">Pilih objek (Orbit/Top)</span></div>
         <div class="k-row"><span class="kk">DRAG</span><span class="kd">Putar kamera (Orbit/Top)</span></div>
         <div class="k-row"><span class="kk">SCROLL</span><span class="kd">Zoom / jarak taruh</span></div>
@@ -4150,6 +4230,437 @@ const playerMesh=new THREE.Group();
 playerMesh.visible=false;scene.add(playerMesh);
 
 // =============================================================
+// MODE TEMBAK — tembak-tembakan santai di dalam lab.
+// - Klik kiri (mode FPS + pointer terkunci) = tembak (hitscan + tracer).
+// - Item lab (meja/lemari/alat) = TAMENG: peluru berhenti di item yang
+//   kena lebih dulu, tak sampai ke pemain di belakangnya (kaya glowall).
+// - Tiap pemain HP 100, 20 damage/tembakan, mati → overlay + respawn 3 dtk.
+// - Multiplayer: tembakan disiarkan (combat:shoot), hit diverifikasi server
+//   yang otoritatif soal HP (combat:hit/killed/respawn).
+// - Solo (tanpa room): latihan menembak 3 dummybot di tengah ruangan.
+// =============================================================
+const COMBAT={
+  on:false,hp:100,maxHp:100,alive:true,
+  damage:20,cooldown:0.18,lastShot:0,lastHurt:-99,range:45,
+  tracers:[],sparks:[],dummies:[],
+  kills:0,deaths:0,audio:null,blockToastAt:0
+};
+let combatSocketOn=false;
+
+function combatToggle(){
+  if(!appStarted){showToast('Masuk lab dulu untuk main tembak');return;}
+  combatSet(!COMBAT.on);
+}
+function combatSet(on){
+  COMBAT.on=!!on;
+  try{document.getElementById('viewWrap').classList.toggle('combat',COMBAT.on);}catch(e){}
+  try{document.getElementById('btnCombat').classList.toggle('combat-on',COMBAT.on);}catch(e){}
+  combatRenderHud();
+  if(COMBAT.on){
+    if(!MP.enabled)combatSpawnDummies();
+    showToast(camMode==='fps'?'🔫 MODE TEMBAK ON — klik untuk nembak!':'🔫 MODE TEMBAK ON — pindah ke mode FPS (F) untuk nembak!');
+  }else{
+    combatClearDummies();
+    showToast('Mode tembak OFF');
+  }
+}
+// Masuk room baru = nyawa segar + dummy latihan dibersihkan (di room ada
+// pemain beneran). Dipanggil dari handler room:state.
+function combatOnRoom(){
+  combatClearDummies();
+  COMBAT.hp=COMBAT.maxHp;COMBAT.alive=true;COMBAT.kills=0;COMBAT.deaths=0;
+  try{document.getElementById('deathOverlay').classList.remove('on');}catch(e){}
+  combatRenderHud();
+}
+function combatCanShoot(){
+  return appStarted&&COMBAT.on&&COMBAT.alive&&!PLACEMENT.active&&!inventoryOpen
+    &&camMode==='fps'&&isLocked;
+}
+function combatRenderHud(){
+  try{
+    const bar=document.getElementById('hpBar'),txt=document.getElementById('hpText');
+    if(!bar||!txt)return;
+    const frac=Math.max(0,COMBAT.hp/COMBAT.maxHp);
+    bar.style.width=(frac*100)+'%';
+    bar.style.background=!COMBAT.alive?'#6b7280':(frac>0.5?'#22c55e':(frac>0.25?'#f59e0b':'#ef4444'));
+    txt.textContent=COMBAT.alive?String(Math.ceil(COMBAT.hp)):'TUMBANG';
+    document.getElementById('kdText').textContent=COMBAT.kills+' kill · '+COMBAT.deaths+' mati';
+  }catch(e){}
+}
+function combatFeed(html){
+  try{
+    const kf=document.getElementById('killfeed');if(!kf)return;
+    const d=document.createElement('div');d.className='kf';d.innerHTML=html;
+    kf.insertBefore(d,kf.firstChild);
+    while(kf.children.length>4)kf.removeChild(kf.lastChild);
+    setTimeout(function(){try{if(d.parentNode)d.parentNode.removeChild(d);}catch(e){}},4200);
+  }catch(e){}
+}
+function combatPew(){
+  try{
+    if(!COMBAT.audio){
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return;
+      COMBAT.audio=new AC();
+    }
+    const ctx=COMBAT.audio;
+    if(ctx.state==='suspended'){try{ctx.resume();}catch(e){}}
+    const t=ctx.currentTime;
+    const osc=ctx.createOscillator(),g=ctx.createGain();
+    osc.type='square';
+    osc.frequency.setValueAtTime(740,t);
+    osc.frequency.exponentialRampToValueAtTime(160,t+0.11);
+    g.gain.setValueAtTime(0.07,t);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.12);
+    osc.connect(g);g.connect(ctx.destination);
+    osc.start(t);osc.stop(t+0.13);
+  }catch(e){}
+}
+// Tembakan hitscan: cari objek terdekat di garis tembak.
+// Urutan otomatis benar karena raycast terurut jarak: avatar/dummy yang
+// tertutup item TIDAK kena (item = tameng). Mesh tak terlihat (ghost,
+// tracer, label sprite) dilewati.
+function combatResolveHit(origin,dir){
+  const rc=new THREE.Raycaster(origin,dir.clone().normalize(),0.01,COMBAT.range);
+  const avMap=new Map(),dumMap=new Map(),bodyMap=new Map();
+  try{
+    MP.avatars.forEach(function(av,sid){if(av&&av.group)avMap.set(av.group,sid);});
+  }catch(e){}
+  for(let i=0;i<COMBAT.dummies.length;i++){dumMap.set(COMBAT.dummies[i].group,COMBAT.dummies[i]);}
+  for(let i=0;i<PHYS.bodies.length;i++){if(PHYS.bodies[i].mesh)bodyMap.set(PHYS.bodies[i].mesh,PHYS.bodies[i]);}
+  let localGroup=null;
+  try{if(MP.localAvatar&&MP.localAvatar.group)localGroup=MP.localAvatar.group;}catch(e){}
+  const ghost=PLACEMENT.ghost||null;
+  const hits=rc.intersectObjects(scene.children,true);
+  for(let i=0;i<hits.length;i++){
+    const h=hits[i],o=h.object;
+    if(!o.isMesh)continue;
+    let p=o,skip=false,done=null;
+    while(p){
+      if(p===playerMesh||p===localGroup||p===ghost||(p.userData&&p.userData.combatFx)){skip=true;break;}
+      if(avMap.has(p)){
+        const sid=avMap.get(p);
+        const pr=MP.peers.get(sid);
+        if(pr&&pr.alive===false){skip=true;break;}
+        done={kind:'peer',sid:sid,point:h.point};break;
+      }
+      if(dumMap.has(p)){
+        const d=dumMap.get(p);
+        if(!d.alive){skip=true;break;}
+        done={kind:'dummy',dummy:d,point:h.point};break;
+      }
+      if(bodyMap.has(p)){
+        const b=bodyMap.get(p);
+        done={kind:'item',label:b.label||'perabot',point:h.point};break;
+      }
+      p=p.parent;
+    }
+    if(skip)continue;
+    if(done)return done;
+    return {kind:'wall',point:h.point};
+  }
+  return null;
+}
+function combatSpawnTracer(a,b){
+  try{
+    const geo=new THREE.BufferGeometry().setFromPoints([a.clone(),b.clone()]);
+    const mat=new THREE.LineBasicMaterial({color:0xffe08a,transparent:true,opacity:0.9});
+    const line=new THREE.Line(geo,mat);
+    line.userData.combatFx=true;line.renderOrder=997;
+    scene.add(line);
+    COMBAT.tracers.push({line:line,life:0.09,max:0.09});
+  }catch(e){}
+}
+function combatSpawnSpark(pos,hex){
+  try{
+    const m=new THREE.SpriteMaterial({map:lampGlowTexture(),color:hex||0xfde68a,
+      transparent:true,opacity:0.95,blending:THREE.AdditiveBlending,depthWrite:false});
+    const spr=new THREE.Sprite(m);
+    spr.position.copy(pos);spr.scale.set(0.42,0.42,1);
+    spr.userData.combatFx=true;spr.renderOrder=998;
+    scene.add(spr);
+    COMBAT.sparks.push({spr:spr,life:0.25,max:0.25});
+  }catch(e){}
+}
+function combatFlashHitmark(kill){
+  try{
+    const el=document.getElementById('hitmark');if(!el)return;
+    el.classList.remove('show','kill');
+    void el.offsetWidth;
+    if(kill)el.classList.add('kill');
+    el.classList.add('show');
+  }catch(e){}
+}
+function combatFlashDamage(){
+  try{
+    const el=document.getElementById('dmgFlash');if(!el)return;
+    el.classList.remove('show');void el.offsetWidth;el.classList.add('show');
+  }catch(e){}
+}
+function combatItemBlockedToast(label){
+  const now=performance.now();
+  if(now-COMBAT.blockToastAt<2500)return;
+  COMBAT.blockToastAt=now;
+  showToast('🛡 Tertahan '+(label||'perabot')+' — jadi tameng!');
+}
+function combatShoot(){
+  if(!combatCanShoot())return;
+  const now=performance.now()/1000;
+  if(now-COMBAT.lastShot<COMBAT.cooldown)return;
+  COMBAT.lastShot=now;
+  const origin=new THREE.Vector3();camera.getWorldPosition(origin);
+  const dir=new THREE.Vector3();camera.getWorldDirection(dir);
+  origin.addScaledVector(dir,0.4);
+  const hit=combatResolveHit(origin,dir);
+  const end=hit?hit.point.clone():origin.clone().addScaledVector(dir,COMBAT.range);
+  combatSpawnTracer(origin,end);
+  combatPew();
+  const inRoom=MP.enabled&&MP.socket&&MP.socket.connected;
+  if(inRoom){
+    try{MP.socket.emit('combat:shoot',{origin:{x:origin.x,y:origin.y,z:origin.z},dir:{x:dir.x,y:dir.y,z:dir.z}});}catch(e){}
+  }
+  if(!hit)return;
+  if(hit.kind==='peer'){
+    combatSpawnSpark(hit.point,0xef4444);
+    combatFlashHitmark(false);
+    if(inRoom){try{MP.socket.emit('combat:hit',{to:hit.sid,damage:COMBAT.damage});}catch(e){}}
+  }else if(hit.kind==='dummy'){
+    combatSpawnSpark(hit.point,0xf59e0b);
+    combatFlashHitmark(false);
+    combatDamageDummy(hit.dummy,COMBAT.damage);
+  }else if(hit.kind==='item'){
+    combatSpawnSpark(hit.point,0xfde68a);
+    combatItemBlockedToast(hit.label);
+  }else{
+    combatSpawnSpark(hit.point,0x9ca3af);
+  }
+}
+// ----- Dummy latihan (solo): 3 robot target, HP 60, respawn 5 dtk -----
+function combatSpawnDummies(){
+  combatClearDummies();
+  if(MP.enabled)return;
+  const spots=[[PX-2.5,PZ-1],[PX+2.5,PZ-1],[PX,PZ-3.5]];
+  for(let i=0;i<spots.length;i++){
+    try{
+      const g=new THREE.Group();
+      const bodyMat=new THREE.MeshStandardMaterial({color:0xf59e0b,roughness:0.5});
+      const darkMat=new THREE.MeshStandardMaterial({color:0x1f2937,roughness:0.6});
+      const torso=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.6,0.3),bodyMat);
+      torso.position.y=0.9;torso.castShadow=true;g.add(torso);
+      const head=new THREE.Mesh(new THREE.SphereGeometry(0.15,14,10),darkMat);
+      head.position.y=1.35;head.castShadow=true;g.add(head);
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(0.22,0.03,10,24),
+        new THREE.MeshBasicMaterial({color:0xef4444}));
+      ring.position.set(0,0.9,0.17);g.add(ring);
+      const legL=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.6,0.12),darkMat);
+      legL.position.set(-0.12,0.3,0);g.add(legL);
+      const legR=legL.clone();legR.position.x=0.12;g.add(legR);
+      const label=mpMakeNameSprite('DUMMY '+(i+1),'#f59e0b');
+      label.position.y=1.66;g.add(label);
+      g.position.set(spots[i][0],0,spots[i][1]);
+      g.rotation.y=Math.atan2(PX-spots[i][0],(PZ+2.5)-spots[i][1]);
+      scene.add(g);
+      COMBAT.dummies.push({group:g,ring:ring,hp:60,maxHp:60,alive:true,respawnT:0,phase:Math.random()*6.28});
+    }catch(e){}
+  }
+  if(COMBAT.dummies.length)showToast('🎯 3 dummy latihan muncul — tembak untuk latihan!');
+}
+function combatClearDummies(){
+  for(let i=0;i<COMBAT.dummies.length;i++){
+    try{scene.remove(COMBAT.dummies[i].group);}catch(e){}
+  }
+  COMBAT.dummies.length=0;
+}
+function combatDamageDummy(d,dmg){
+  if(!d.alive)return;
+  d.hp-=dmg;
+  if(d.hp<=0){
+    d.hp=0;d.alive=false;d.respawnT=5;
+    d.group.rotation.x=-1.25;
+    COMBAT.kills++;
+    combatFlashHitmark(true);
+    combatRenderHud();
+    combatFeed('🎯 Kamu menghancurkan <b>DUMMY</b> (latihan)');
+    showToast('🎯 Dummy hancur! Bangkit lagi 5 dtk…');
+  }
+}
+// ----- Kena tembak (otoritatif dari server) -----
+function combatTakeDamage(m){
+  COMBAT.hp=(typeof m.hp==='number')?m.hp:COMBAT.hp;
+  COMBAT.lastHurt=performance.now()/1000;
+  combatFlashDamage();
+  combatRenderHud();
+  if(m&&m.alive===false)combatDie(m);
+}
+function combatDie(m){
+  if(!COMBAT.alive)return;
+  COMBAT.alive=false;COMBAT.hp=0;COMBAT.deaths++;
+  combatRenderHud();
+  try{
+    document.getElementById('deathSub').textContent=
+      'Dikalahkan '+(m&&m.fromName?m.fromName:'')+' — respawn 3…';
+    document.getElementById('deathOverlay').classList.add('on');
+  }catch(e){}
+  let n=3;
+  const iv=setInterval(function(){
+    n--;
+    if(n<=0){
+      clearInterval(iv);
+      combatRespawn();
+    }else{
+      try{document.getElementById('deathSub').textContent='Respawn '+n+'…';}catch(e){}
+    }
+  },1000);
+}
+function combatRespawn(){
+  if(COMBAT.alive)return;
+  COMBAT.alive=true;COMBAT.hp=COMBAT.maxHp;
+  try{player.pos.set(PX,1.6,PZ+2.5);player.velY=0;}catch(e){}
+  try{document.getElementById('deathOverlay').classList.remove('on');}catch(e){}
+  combatRenderHud();
+  showToast('💚 Hidup lagi — HP penuh!');
+}
+// ----- Listener socket combat (idempotent, pola voiceInitSocketListeners) -----
+function combatInitSocketListeners(){
+  if(combatSocketOn||!MP.socket)return;
+  combatSocketOn=true;
+  MP.socket.on('combat:shoot',function(m){
+    try{
+      if(!m||m.from===MP.uid||!COMBAT.on)return;
+      const o=m.origin||{},d=m.dir||{};
+      const origin=new THREE.Vector3(Number(o.x)||0,Number(o.y)||1.6,Number(o.z)||0);
+      let dir=new THREE.Vector3(Number(d.x)||0,Number(d.y)||0,Number(d.z)||-1);
+      if(dir.lengthSq()<0.001)dir.set(0,0,-1);
+      dir.normalize();
+      const hit=combatResolveHit(origin,dir);
+      const end=hit?hit.point.clone():origin.clone().addScaledVector(dir,COMBAT.range);
+      combatSpawnTracer(origin,end);
+      if(hit)combatSpawnSpark(hit.point,hit.kind==='peer'?0xef4444:0x9ca3af);
+    }catch(e){}
+  });
+  MP.socket.on('combat:hit',function(m){
+    try{
+      if(!m)return;
+      const p=MP.peers.get(m.to);
+      if(p){p.hp=m.hp;if(m.alive===false)p.alive=false;}
+      if(m.to===MP.uid)combatTakeDamage(m);
+      else if(m.killed)combatFlashHitmark(true);
+      combatSetAvatarDead(m.to,m.alive===false);
+      mpRenderPlayerList();
+    }catch(e){}
+  });
+  MP.socket.on('combat:killed',function(m){
+    try{
+      if(!m)return;
+      combatFeed('🔫 <b>'+escName(m.byName||'Pemain')+'</b> mengalahkan <b>'+escName(m.victimName||'Pemain')+'</b>');
+      if(m.victim!==MP.uid&&m.by!==MP.uid)showToast((m.byName||'Pemain')+' 🔫 '+(m.victimName||'Pemain'));
+    }catch(e){}
+  });
+  MP.socket.on('combat:respawn',function(m){
+    try{
+      if(!m)return;
+      const p=MP.peers.get(m.peer);
+      if(p){p.hp=100;p.alive=true;}
+      combatSetAvatarDead(m.peer,false);
+      if(m.peer===MP.uid)combatRespawn();
+      mpRenderPlayerList();
+    }catch(e){}
+  });
+}
+// Avatar peer yang tumbang = transparan (tak bisa ditembak).
+function combatSetAvatarDead(sid,dead){
+  try{
+    const av=MP.avatars.get(sid);
+    if(!av||!!av.dead===!!dead)return;
+    av.dead=!!dead;
+    av.group.traverse(function(o){
+      if(o&&o.isMesh){
+        o.material.transparent=true;
+        o.material.opacity=dead?0.3:1;
+      }
+    });
+  }catch(e){}
+}
+// Bar HP kecil di atas kepala tiap peer (muncul saat mode tembak).
+function combatEnsureHpBar(av){
+  if(av.hpBar)return;
+  try{
+    const bg=new THREE.Sprite(new THREE.SpriteMaterial({color:0x111827,depthTest:false,transparent:true,opacity:0.85}));
+    bg.scale.set(0.55,0.075,1);bg.position.y=1.88;bg.renderOrder=998;
+    const fg=new THREE.Sprite(new THREE.SpriteMaterial({color:0x22c55e,depthTest:false,transparent:true,opacity:0.95}));
+    fg.scale.set(0.51,0.045,1);fg.position.y=1.88;fg.renderOrder=999;
+    av.group.add(bg);av.group.add(fg);
+    av.hpBar={bg:bg,fg:fg};
+  }catch(e){}
+}
+function combatUpdateHpBars(){
+  try{
+    MP.avatars.forEach(function(av,sid){
+      combatEnsureHpBar(av);
+      if(!av.hpBar)return;
+      const show=COMBAT.on;
+      av.hpBar.bg.visible=show;av.hpBar.fg.visible=show;
+      if(!show)return;
+      const p=MP.peers.get(sid);
+      const hp=(p&&typeof p.hp==='number')?p.hp:100;
+      const alive=!p||p.alive!==false;
+      const frac=Math.max(0,hp/100);
+      av.hpBar.fg.scale.x=0.51*frac;
+      av.hpBar.fg.position.x=-(1-frac)*0.255;
+      av.hpBar.fg.material.color.setHex(!alive?0x6b7280:(frac>0.5?0x22c55e:(frac>0.25?0xf59e0b:0xef4444)));
+    });
+  }catch(e){}
+}
+// Dipanggil tiap frame dari animate(): efek + regen + dummy.
+function combatTick(dt){
+  for(let i=COMBAT.tracers.length-1;i>=0;i--){
+    const t=COMBAT.tracers[i];
+    t.life-=dt;
+    if(t.life<=0){
+      try{scene.remove(t.line);t.line.geometry.dispose();t.line.material.dispose();}catch(e){}
+      COMBAT.tracers.splice(i,1);
+    }else{
+      t.line.material.opacity=0.9*(t.life/t.max);
+    }
+  }
+  for(let i=COMBAT.sparks.length-1;i>=0;i--){
+    const s=COMBAT.sparks[i];
+    s.life-=dt;
+    if(s.life<=0){
+      try{scene.remove(s.spr);s.spr.material.dispose();}catch(e){}
+      COMBAT.sparks.splice(i,1);
+    }else{
+      const f=s.life/s.max;
+      s.spr.material.opacity=0.95*f;
+      const sc=0.08+0.34*f;
+      s.spr.scale.set(sc,sc,1);
+    }
+  }
+  // Regen pelan bila 5 dtk tak kena tembak
+  if(COMBAT.alive&&COMBAT.hp<COMBAT.maxHp&&(performance.now()/1000-COMBAT.lastHurt)>5){
+    COMBAT.hp=Math.min(COMBAT.maxHp,COMBAT.hp+6*dt);
+    combatRenderHud();
+  }
+  // Dummy: goyang + respawn
+  for(let i=0;i<COMBAT.dummies.length;i++){
+    const d=COMBAT.dummies[i];
+    if(d.alive){
+      try{
+        d.group.position.y=Math.abs(Math.sin(performance.now()/600+d.phase))*0.06;
+        d.ring.rotation.z+=dt*2;
+      }catch(e){}
+    }else{
+      d.respawnT-=dt;
+      if(d.respawnT<=0){
+        d.alive=true;d.hp=d.maxHp;
+        try{d.group.rotation.x=0;}catch(e){}
+      }
+    }
+  }
+  combatUpdateHpBars();
+}
+
+// =============================================================
 // MULTIPLAYER — Socket.IO real-time
 // =============================================================
 const MP_COLORS=['#3D7EA6','#D97706','#2E5C3E','#8B1E1E','#5D4A34','#4B3A2A','#2A4A78','#B8892B','#7A3E68','#3F6B34','#8A939B','#424242'];
@@ -4246,6 +4757,7 @@ function mpPostStateToParent(){
     MP.ready=true;
     try{const nb=document.getElementById('netBanner');if(nb)nb.classList.remove('on');}catch(e){}
     voiceInitSocketListeners();   // idempotent (dijaga flag di dalam)
+    combatInitSocketListeners();  // idem: listener tembakan/HP
     if(availEl){
       availEl.textContent='Server multiplayer siap · kamu = '+MP.uid.slice(0,6);
       availEl.classList.remove('err');
@@ -4331,6 +4843,7 @@ function mpPostStateToParent(){
     // apply world dari server
     mpApplyRemoteWorldState(state.items||[]);
     labipaMarkSceneReady(state.items);
+    try{combatOnRoom();}catch(e){}
 
     document.getElementById('mpRoomCode').textContent=mpFormatRoom(MP.code);
     // Alur overlay (lobby baru): JANGAN tampilkan panel MP lama di dalam game.
@@ -5297,6 +5810,7 @@ function mpRenderPlayerList(){
     '<div class="mp-player">'+
       '<span class="dot" style="background:'+MP.color+'"></span>'+
       '<span class="nm">'+escName(MP.username||'Kamu')+' (kamu)</span>'+
+      (COMBAT.on?'<span class="hp">♥'+(COMBAT.alive?Math.ceil(COMBAT.hp):0)+'</span>':'')+
       (MP.isHost?'<span class="crown">👑</span>':'')+
       mpRoleBadge(null,true)+
       (VOICE.speakingLocal?'<span class="crown" title="sedang bicara">🔊</span>':'')+
@@ -5307,6 +5821,7 @@ function mpRenderPlayerList(){
       '<div class="mp-player">'+
         '<span class="dot" style="background:'+(pres.color||'#3D7EA6')+'"></span>'+
         '<span class="nm">'+escName(pres.username||'Pemain')+'</span>'+
+        (COMBAT.on?'<span class="hp">♥'+(pres.alive===false?0:Math.ceil(typeof pres.hp==='number'?pres.hp:100))+'</span>':'')+
         mpRoleBadge(pres,false)+
         (MP.isHost&&!pres.isHost?'<button class="role-btn" data-peer="'+sid+'" title="Ubah peran editor/viewer">⚙</button>':'')+
         (pres.isHost?'<span class="crown">👑</span>':'')+
@@ -5967,6 +6482,8 @@ document.addEventListener('mousemove',function(e){
 cvs.addEventListener('mousedown',function(e){
   if(camMode!=='fps'||!isLocked)return;
   if(e.button===0&&PLACEMENT.active){confirmPlacement(); return;}
+  // Mode tembak: klik = nembak (pintu tetap bisa via tombol E)
+  if(e.button===0&&COMBAT.on){combatShoot(); return;}
   if(e.button===0&&!PLACEMENT.active){
     if(toggleDoorCrosshair()) return;
   }
@@ -5991,6 +6508,7 @@ document.addEventListener('keydown',function(e){
     e.preventDefault();
     return;
   }
+  if(e.code==='KeyG'){combatToggle();e.preventDefault();return;}
   if(e.code==='KeyI'){toggleInventory();e.preventDefault();return;}
   if(e.code==='KeyH'){togglePanel();e.preventDefault();return;}
   if(e.code==='Escape'){
@@ -6084,6 +6602,7 @@ document.querySelectorAll('#snapBar button').forEach(function(btn){
 });
 
 document.getElementById('btnKatalog').addEventListener('click',openInventory);
+document.getElementById('btnCombat').addEventListener('click',function(e){e.stopPropagation();combatToggle();});
 document.getElementById('btnInfo').addEventListener('click',togglePanel);
 document.getElementById('btnSave').addEventListener('click',saveLayout);
 // Sprint 5: Publish / Clone / Checkpoint manual
@@ -6640,6 +7159,7 @@ function animate(){
   PHYS.step(dt);
   updatePlacement();
   mpTick(dt);
+  combatTick(dt);
 
   if(camMode==='fps'){
     if(isLocked){
