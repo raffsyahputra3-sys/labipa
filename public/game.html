@@ -1010,6 +1010,12 @@ canvas{display:block}
   font-weight:600;letter-spacing:.04em;padding:9px 0;cursor:pointer}
 #mpInviteBtn:hover{background:var(--ink);color:var(--paper-hi)}
 
+@media(max-width:1280px){
+  #inspector{width:270px}
+  #minimap{width:180px;height:180px}
+  #minimap canvas{width:180px;height:156px}
+  #hint{max-width:calc(100% - 220px)}
+}
 @media(max-width:900px){
   #topbar .brand .sub{display:none}
   #topbar .brand .title .tag{display:none}
@@ -1017,9 +1023,29 @@ canvas{display:block}
   .tb-btn{padding:0 9px}
   #topbar{gap:8px;padding:0 10px}
   #topbar .time{display:none}
-  #inspector{width:260px}
-  #minimap{width:170px;height:170px}
-  #minimap canvas{width:170px;height:146px}
+  #inspector{width:min(260px,calc(100vw - 28px));top:auto;bottom:86px;max-height:38vh;overflow:auto}
+  #minimap{width:150px;height:150px;bottom:86px}
+  #minimap canvas{width:150px;height:126px}
+  #killfeed{top:60px;max-width:min(220px,calc(100vw - 28px))}
+  #killfeed .kf{font-size:10.5px}
+  #hint{display:none}
+  #placeHint{top:60px;max-width:calc(100vw - 24px);text-align:center}
+  #placeBar{bottom:12px;max-width:calc(100vw - 20px);flex-wrap:wrap;justify-content:center;padding:8px 10px;gap:8px}
+  #placeBar .info{border-right:none;padding-right:0}
+  #placeBar .rot-group{border-right:none;padding-right:0}
+  /* HUD nyawa naik di atas placeBar agar tidak tertumpuk saat menata sambil tempur */
+  #hpHud{bottom:118px;padding:6px 10px}
+  #hpBarWrap{width:130px}
+  #toast{bottom:170px;max-width:calc(100vw - 32px);text-align:center}
+}
+@media(max-height:700px){
+  #inspector{max-height:calc(100% - 160px);overflow:auto}
+  #minimap{width:150px;height:150px}
+  #minimap canvas{width:150px;height:126px}
+  #hpHud{bottom:44px}
+  #placeBar{bottom:10px;padding:8px 10px}
+  #killfeed{top:58px}
+  #hint{display:none}
 }
 :focus-visible{outline:2px solid var(--safety);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){
@@ -4092,9 +4118,22 @@ function updatePlacement(){
   const def=MAKERS[PLACEMENT.item];
   let baseX,baseZ;
   if(camMode==='fps'){
-    const fx=-Math.sin(yaw),fz=-Math.cos(yaw);
-    baseX=player.pos.x+fx*PLACEMENT.dist;
-    baseZ=player.pos.z+fz*PLACEMENT.dist;
+    // Bidik dari tengah layar (crosshair): potongkan ray kamera dengan
+    // bidang lantai y=0 supaya ghost selalu tepat di bawah crosshair,
+    // tidak meleset saat kamera menengadah/menunduk (pitch).
+    // Jarak dijepit 1..8 m; scroll mouse tetap menggeser PLACEMENT.dist.
+    try{
+      const rc=new THREE.Raycaster();
+      rc.setFromCamera(new THREE.Vector2(0,0),camera);
+      const o=rc.ray.origin,d=rc.ray.direction;
+      if(Math.abs(d.y)>1e-4){
+        const t=(0-o.y)/d.y;
+        if(t>0){
+          const tc=Math.max(1.0,Math.min(8,Math.max(PLACEMENT.dist-1.5,Math.min(PLACEMENT.dist+1.5,t))));
+          baseX=o.x+d.x*tc;baseZ=o.z+d.z*tc;
+        }else{const fx=-Math.sin(yaw),fz=-Math.cos(yaw);baseX=player.pos.x+fx*PLACEMENT.dist;baseZ=player.pos.z+fz*PLACEMENT.dist;}
+      }else{const fx=-Math.sin(yaw),fz=-Math.cos(yaw);baseX=player.pos.x+fx*PLACEMENT.dist;baseZ=player.pos.z+fz*PLACEMENT.dist;}
+    }catch(e){const fx=-Math.sin(yaw),fz=-Math.cos(yaw);baseX=player.pos.x+fx*PLACEMENT.dist;baseZ=player.pos.z+fz*PLACEMENT.dist;}
   }else if(camMode==='orbit'){
     baseX=orbit.target.x;baseZ=orbit.target.z;
   }else{
@@ -4444,7 +4483,7 @@ function combatBuildWeapon(){
       transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,depthTest:false}));
     flash.position.set(0,0.012,-0.37);flash.scale.set(0.26,0.26,1);flash.raycast=function(){};g.add(flash);
     const muzzle=new THREE.Object3D();muzzle.position.set(0,0.012,-0.34);g.add(muzzle);
-    g.scale.setScalar(0.5);
+    g.scale.setScalar(0.5*((typeof combatViewScale==='number'&&combatViewScale>0)?combatViewScale:1));
     g.position.set(COMBAT_VM_POS.x,COMBAT_VM_POS.y,COMBAT_VM_POS.z);
     g.visible=false;
     camera.add(g);
@@ -4465,9 +4504,13 @@ function combatTickWeapon(dt){
   vm.bob+=dt*(moving?9:1.6);
   const amp=moving?0.0055:0.0016;
   const k=vm.kick*vm.kick;
+  // Kompensasi FOV adaptif: sudut pandang lebar = offset & ukuran senjata
+  // ikut diskala agar tetap di pojok kanan-bawah dalam semua ukuran layar.
+  const vs=(typeof combatViewScale==='number'&&combatViewScale>0)?combatViewScale:1;
+  try{vm.group.scale.setScalar(0.5*vs);}catch(e){}
   vm.group.position.set(
-    COMBAT_VM_POS.x+Math.cos(vm.bob*0.5)*amp,
-    COMBAT_VM_POS.y+Math.sin(vm.bob)*amp,
+    (COMBAT_VM_POS.x+Math.cos(vm.bob*0.5)*amp)*vs,
+    (COMBAT_VM_POS.y+Math.sin(vm.bob)*amp)*vs,
     COMBAT_VM_POS.z+k*0.03);
   vm.group.rotation.set(0.07+k*0.2,0.13,-0.04);
   // Kilatan: frame pertama setelah tembakan selalu penuh (walau FPS rendah), lalu padam
@@ -7581,12 +7624,35 @@ document.getElementById('btnStart').addEventListener('click',function(e){
   }
 })();
 
+// FOV vertikal dasar 60° di layar lebar (16:9). Layar kecil/sempit horizontal
+// FOV-nya menciut → terasa "ngezom". Samakan horizontal FOV di semua aspek:
+// vFov = 2*atan(tan(60°/2)*1.78/aspect), dijepit 55°..80°.
+let combatViewScale=1;
+function responsiveFov(w,h){
+  const aspect=(h>0)?(w/h):1.78;
+  const t=Math.tan((60*Math.PI/180)/2)*1.78/Math.max(0.5,aspect);
+  const deg=2*Math.atan(t)*180/Math.PI;
+  return Math.max(55,Math.min(80,deg));
+}
 function onResize(){
   const wrap=document.getElementById('viewWrap');
-  const w=wrap.clientWidth,h=wrap.clientHeight;
-  camera.aspect=w/h;camera.updateProjectionMatrix();
+  const w=wrap.clientWidth||window.innerWidth,h=wrap.clientHeight||window.innerHeight;
+  if(h<=0)return;
+  const aspect=w/h;
+  camera.aspect=aspect;
+  camera.fov=responsiveFov(w,h);
+  camera.updateProjectionMatrix();
+  combatViewScale=Math.tan((camera.fov*Math.PI/180)/2)/Math.tan((60*Math.PI/180)/2);
+  // Sinkronkan frustum ortho agar mode Top tidak melar di layar beda
+  try{
+    const viewH=14/((typeof topView!=='undefined'&&topView.zoom)?topView.zoom:1);
+    const viewW=viewH*aspect;
+    orthoCam.left=-viewW/2;orthoCam.right=viewW/2;
+    orthoCam.top=viewH/2;orthoCam.bottom=-viewH/2;
+  }catch(e){}
   orthoCam.updateProjectionMatrix();
   renderer.setSize(w,h,false);
+  try{if(COMBAT&&COMBAT.vm&&COMBAT.vm.group)COMBAT.vm.group.scale.setScalar(0.5*combatViewScale);}catch(e){}
 }
 window.addEventListener('resize',onResize);
 onResize();
