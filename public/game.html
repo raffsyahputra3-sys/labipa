@@ -1005,6 +1005,10 @@ canvas{display:block}
   background:var(--paper-hi);color:var(--alert);font-family:var(--sans);font-size:11px;
   font-weight:600;letter-spacing:.04em;padding:9px 0;cursor:pointer}
 #mpLeaveBtn:hover{background:var(--alert);color:var(--paper-hi)}
+#mpInviteBtn{width:100%;border:none;border-top:1px solid var(--rule-soft);
+  background:var(--paper-hi);color:var(--ink);font-family:var(--sans);font-size:11px;
+  font-weight:600;letter-spacing:.04em;padding:9px 0;cursor:pointer}
+#mpInviteBtn:hover{background:var(--ink);color:var(--paper-hi)}
 
 @media(max-width:900px){
   #topbar .brand .sub{display:none}
@@ -1507,7 +1511,7 @@ div[data-mppanel="solo"] .cover-cta{
     <button class="tb-btn accent" id="btnStd" title="Cek kesesuaian standar">
       <span class="ico">✓</span><span class="lbl-txt">Cek Standar</span>
     </button>
-    <button class="tb-btn" id="btnCombat" title="Mode tembak: klik untuk nembak (G)">
+    <button class="tb-btn" id="btnCombat" title="Mode tembak (G) — tembak: klik atau tombol P">
       <span class="ico">🔫</span><span class="lbl-txt">Tembak</span>
     </button>
   </div>
@@ -1532,7 +1536,7 @@ div[data-mppanel="solo"] .cover-cta{
   <button class="tb-btn icon-only" id="btnReset" title="Reset ruangan (R)">
     <span class="ico">🗑</span>
   </button>
-  <button class="tb-btn icon-only" id="btnDownload" title="Download HTML layout (D)">
+  <button class="tb-btn icon-only" id="btnDownload" title="Download HTML layout">
     <span class="ico">📄</span>
   </button>
   <span id="saveState" class="sv-idle" title="Status simpan">●</span>
@@ -1603,6 +1607,7 @@ div[data-mppanel="solo"] .cover-cta{
       <div class="mp-sect">PEMAIN AKTIF</div>
       <div id="mpPlayers"></div>
       <div class="mp-nameRow"><button id="mpRenameBtn" type="button" title="Ubah nama tampilan">✎ nama</button><button id="mpLockBtn" type="button" title="Kunci room (host)">🔒 kunci</button></div>
+      <button id="mpInviteBtn" type="button" title="Teman cukup membuka link ini — kode terisi otomatis, tanpa salah ketik">🔗 Salin link undangan</button>
       <button id="mpLeaveBtn" type="button">⏻ Keluar Room</button>
     </div>
 
@@ -1733,7 +1738,7 @@ div[data-mppanel="solo"] .cover-cta{
         <div class="k-row"><span class="kk">SHIFT</span><span class="kd">Lari</span></div>
         <div class="k-row"><span class="kk">SPACE</span><span class="kd">Lompat (FPS)</span></div>
         <div class="k-row"><span class="kk">G</span><span class="kd">Mode tembak on/off</span></div>
-        <div class="k-row"><span class="kk">KLIK (FPS)</span><span class="kd">Tembak — item lab jadi tameng</span></div>
+        <div class="k-row"><span class="kk">P / KLIK (FPS)</span><span class="kd">Tembak — item lab jadi tameng</span></div>
         <div class="k-row"><span class="kk">KLIK</span><span class="kd">Pilih objek (Orbit/Top)</span></div>
         <div class="k-row"><span class="kk">DRAG</span><span class="kd">Putar kamera (Orbit/Top)</span></div>
         <div class="k-row"><span class="kk">SCROLL</span><span class="kd">Zoom / jarak taruh</span></div>
@@ -4231,7 +4236,8 @@ playerMesh.visible=false;scene.add(playerMesh);
 
 // =============================================================
 // MODE TEMBAK — tembak-tembakan santai di dalam lab.
-// - Klik kiri (mode FPS + pointer terkunci) = tembak (hitscan + tracer).
+// - Klik kiri (mode FPS + pointer terkunci) ATAU tombol P = tembak (hitscan +
+//   tracer). G = pengalih mode biasa ↔ mode tembak.
 // - Item lab (meja/lemari/alat) = TAMENG: peluru berhenti di item yang
 //   kena lebih dulu, tak sampai ke pemain di belakangnya (kaya glowall).
 // - Tiap pemain HP 100, 20 damage/tembakan, mati → overlay + respawn 3 dtk.
@@ -4257,9 +4263,10 @@ function combatSet(on){
   try{document.getElementById('btnCombat').classList.toggle('combat-on',COMBAT.on);}catch(e){}
   combatRenderHud();
   if(COMBAT.on){
+    combatBuildWeapon();
     if(!MP.enabled)combatSpawnDummies();
     combatPew(); // preview: kalau ini bunyi = audio jalan, tinggal nembak
-    showToast(camMode==='fps'?'🔫 MODE TEMBAK ON — klik untuk nembak!':'🔫 MODE TEMBAK ON — pindah ke mode FPS (F) untuk nembak!');
+    showToast(camMode==='fps'?'🔫 MODE TEMBAK ON — klik atau tombol P untuk nembak!':'🔫 MODE TEMBAK ON — pindah ke mode FPS (F) untuk nembak!');
   }else{
     combatClearDummies();
     showToast('Mode tembak OFF');
@@ -4273,9 +4280,10 @@ function combatOnRoom(){
   try{document.getElementById('deathOverlay').classList.remove('on');}catch(e){}
   combatRenderHud();
 }
-function combatCanShoot(){
+// viaKey: tombol P boleh menembak walau pointer belum terkunci (klik tetap butuh kunci)
+function combatCanShoot(viaKey){
   return appStarted&&COMBAT.on&&COMBAT.alive&&!PLACEMENT.active&&!inventoryOpen
-    &&camMode==='fps'&&isLocked;
+    &&camMode==='fps'&&(isLocked||!!viaKey);
 }
 function combatRenderHud(){
   try{
@@ -4341,6 +4349,9 @@ function combatDieSound(){combatTone(320,55,0.45,'sawtooth',0.14);}
 // tracer, label sprite) dilewati.
 function combatResolveHit(origin,dir){
   const rc=new THREE.Raycaster(origin,dir.clone().normalize(),0.01,COMBAT.range);
+  // WAJIB: scene berisi Sprite (label nama, bar HP, percikan). Tanpa kamera,
+  // Sprite.raycast (r128) melempar TypeError → tembakan batal di tengah jalan.
+  rc.camera=camera;
   const avMap=new Map(),dumMap=new Map(),bodyMap=new Map();
   try{
     MP.avatars.forEach(function(av,sid){if(av&&av.group)avMap.set(av.group,sid);});
@@ -4379,6 +4390,90 @@ function combatResolveHit(origin,dir){
     return {kind:'wall',point:h.point};
   }
   return null;
+}
+// ---------- SENJATA (viewmodel orang-pertama) ----------
+// "Blaster lab": laras krom, sirip pendingin, sel energi berbentuk tabung
+// reaksi yang menyala. Menempel di kamera dan hanya MENGINTIP di pojok
+// kanan-bawah (mode FPS + mode tembak). Diskalakan kecil & dekat kamera
+// (moncong masih di dalam radius pemain 0.3 m) agar tidak menembus dinding.
+// raycast dimatikan → tak mengganggu seleksi, penempatan, maupun hitscan.
+const COMBAT_VM_POS={x:0.124,y:-0.113,z:-0.125};
+function combatBuildWeapon(){
+  if(COMBAT.vm)return COMBAT.vm;
+  try{
+    const g=new THREE.Group();
+    // Bodi gelap doff (pantulan env kecil) supaya tidak ikut pucat di ruangan terang
+    const body=new THREE.MeshStandardMaterial({color:0x12161d,metalness:0.5,roughness:0.46,envMapIntensity:0.35});
+    const steel=new THREE.MeshStandardMaterial({color:0x6f7b8c,metalness:0.9,roughness:0.3,envMapIntensity:0.7});
+    const grip=new THREE.MeshStandardMaterial({color:0x15171c,metalness:0.05,roughness:0.9});
+    const accent=new THREE.MeshStandardMaterial({color:0xD97706,metalness:0.3,roughness:0.45});
+    const glow=new THREE.MeshStandardMaterial({color:0x06323d,emissive:0x22d3ee,emissiveIntensity:2.2,roughness:0.25,envMapIntensity:0.2});
+    const glass=new THREE.MeshPhysicalMaterial({color:0xbff6ff,transparent:true,opacity:0.32,roughness:0.05,metalness:0,envMapIntensity:1.5,depthWrite:false});
+    const add=function(geo,mat,x,y,z,rx,ry,rz){
+      const m=new THREE.Mesh(geo,mat);
+      m.position.set(x,y,z);m.rotation.set(rx||0,ry||0,rz||0);
+      m.raycast=function(){};m.frustumCulled=false;g.add(m);return m;
+    };
+    const R=Math.PI/2;
+    // rangka (laras menghadap -Z = arah pandang)
+    add(new THREE.BoxGeometry(0.06,0.085,0.26),body,0,0,0);
+    add(new THREE.BoxGeometry(0.045,0.03,0.2),body,0,0.055,-0.02);
+    add(new THREE.BoxGeometry(0.02,0.012,0.22),steel,0,0.075,-0.02);
+    // laras + moncong + cincin energi
+    add(new THREE.CylinderGeometry(0.017,0.02,0.2,20),steel,0,0.012,-0.22,R);
+    add(new THREE.CylinderGeometry(0.027,0.027,0.05,20),body,0,0.012,-0.3,R);
+    add(new THREE.TorusGeometry(0.022,0.005,10,24),glow,0,0.012,-0.326);
+    // sirip pendingin
+    for(let i=0;i<4;i++)add(new THREE.BoxGeometry(0.066,0.046,0.007),body,0,0.012,-0.15-i*0.022);
+    // sel energi = tabung reaksi menyala di sisi kiri
+    add(new THREE.CylinderGeometry(0.017,0.017,0.13,16),glass,-0.046,0.022,0,R);
+    add(new THREE.CylinderGeometry(0.011,0.011,0.112,14),glow,-0.046,0.022,0,R);
+    add(new THREE.CylinderGeometry(0.019,0.019,0.012,16),steel,-0.046,0.022,-0.07,R);
+    add(new THREE.CylinderGeometry(0.019,0.019,0.012,16),steel,-0.046,0.022,0.07,R);
+    // strip aksen oranye + pisir
+    add(new THREE.BoxGeometry(0.062,0.012,0.12),accent,0,-0.02,-0.03);
+    add(new THREE.BoxGeometry(0.006,0.012,0.006),glow,0,0.087,-0.115);
+    // garis energi: di atas rel + di sisi kiri (sisi yang menghadap pemain)
+    add(new THREE.BoxGeometry(0.006,0.004,0.17),glow,0,0.0825,-0.01);
+    add(new THREE.BoxGeometry(0.002,0.007,0.19),glow,-0.031,-0.006,-0.02);
+    // gagang + pelindung picu
+    add(new THREE.BoxGeometry(0.048,0.13,0.06),grip,0,-0.095,0.085,0.3);
+    add(new THREE.TorusGeometry(0.028,0.006,8,18,Math.PI),body,0,-0.048,0.02,0,R,Math.PI);
+    // kilatan moncong (muncul sekejap tiap tembakan)
+    const flash=new THREE.Sprite(new THREE.SpriteMaterial({map:lampGlowTexture(),color:0x7dd3fc,
+      transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,depthTest:false}));
+    flash.position.set(0,0.012,-0.37);flash.scale.set(0.26,0.26,1);flash.raycast=function(){};g.add(flash);
+    const muzzle=new THREE.Object3D();muzzle.position.set(0,0.012,-0.34);g.add(muzzle);
+    g.scale.setScalar(0.5);
+    g.position.set(COMBAT_VM_POS.x,COMBAT_VM_POS.y,COMBAT_VM_POS.z);
+    g.visible=false;
+    camera.add(g);
+    if(!camera.parent)scene.add(camera); // anak kamera baru ikut dirender bila kamera ada di scene
+    COMBAT.vm={group:g,flash:flash,muzzle:muzzle,glow:glow,kick:0,bob:0,flashT:0};
+  }catch(e){COMBAT.vm=null;}
+  return COMBAT.vm;
+}
+// Tiap frame: tampil hanya di FPS + mode tembak; hentakan saat menembak,
+// ayunan halus saat diam/berjalan, sel energi berdenyut.
+function combatTickWeapon(dt){
+  const vm=COMBAT.vm;if(!vm)return;
+  const show=COMBAT.on&&appStarted&&COMBAT.alive&&camMode==='fps';
+  vm.group.visible=show;
+  if(!show)return;
+  vm.kick=Math.max(0,vm.kick-dt*7);
+  const moving=!!(keys.KeyW||keys.KeyA||keys.KeyS||keys.KeyD);
+  vm.bob+=dt*(moving?9:1.6);
+  const amp=moving?0.0055:0.0016;
+  const k=vm.kick*vm.kick;
+  vm.group.position.set(
+    COMBAT_VM_POS.x+Math.cos(vm.bob*0.5)*amp,
+    COMBAT_VM_POS.y+Math.sin(vm.bob)*amp,
+    COMBAT_VM_POS.z+k*0.03);
+  vm.group.rotation.set(0.07+k*0.2,0.13,-0.04);
+  // Kilatan: frame pertama setelah tembakan selalu penuh (walau FPS rendah), lalu padam
+  vm.flash.material.opacity=vm.flashT>0?Math.min(1,vm.flashT/0.05):0;
+  vm.flashT=Math.max(0,vm.flashT-dt);
+  vm.glow.emissiveIntensity=1.5+Math.sin(performance.now()/260)*0.35+k*2.6;
 }
 function combatSpawnTracer(a,b){
   try{
@@ -4422,8 +4517,8 @@ function combatItemBlockedToast(label){
   COMBAT.blockToastAt=now;
   showToast('🛡 Tertahan '+(label||'perabot')+' — jadi tameng!');
 }
-function combatShoot(){
-  if(!combatCanShoot())return;
+function combatShoot(viaKey){
+  if(!combatCanShoot(viaKey))return;
   const now=performance.now()/1000;
   if(now-COMBAT.lastShot<COMBAT.cooldown)return;
   COMBAT.lastShot=now;
@@ -4432,7 +4527,10 @@ function combatShoot(){
   origin.addScaledVector(dir,0.4);
   const hit=combatResolveHit(origin,dir);
   const end=hit?hit.point.clone():origin.clone().addScaledVector(dir,COMBAT.range);
-  combatSpawnTracer(origin,end);
+  // Tracer keluar dari moncong senjata (visual saja; hitscan tetap dari kamera)
+  let from=origin;
+  if(COMBAT.vm&&COMBAT.vm.group.visible){from=new THREE.Vector3();COMBAT.vm.muzzle.getWorldPosition(from);COMBAT.vm.kick=1;COMBAT.vm.flashT=0.07;}
+  combatSpawnTracer(from,end);
   combatPew();
   const inRoom=MP.enabled&&MP.socket&&MP.socket.connected;
   if(inRoom){
@@ -4635,6 +4733,8 @@ function combatUpdateHpBars(){
 }
 // Dipanggil tiap frame dari animate(): efek + regen + dummy.
 function combatTick(dt){
+  if(COMBAT.on&&keys.KeyP)combatShoot(true); // P ditahan = tembak beruntun (dibatasi cooldown)
+  combatTickWeapon(dt);
   for(let i=COMBAT.tracers.length-1;i>=0;i--){
     const t=COMBAT.tracers[i];
     t.life-=dt;
@@ -5093,7 +5193,7 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
         btn.disabled=false;
         if(!res||!res.ok){
           mpSetStatus('mpCreateStatus','Gagal: '+((res&&res.error)||'coba lagi'));
-          updateCover(); // masuk langsung dari studio: lobby tersembunyi → tampilkan agar pesan terbaca
+          if(MP.handoffMode)mpBackToStudio('Gagal membuat room: '+((res&&res.error)||'coba lagi'));
           return;
         }
         mpSetStatus('mpCreateStatus','Room dibuat: '+mpFormatRoom(res.code),'ok');
@@ -5107,17 +5207,35 @@ document.getElementById('btnMpCreate').addEventListener('click',function(){
 });
 
 // ---------- JOIN ROOM ----------
+// Gagal masuk dari studio → KEMBALI ke studio beserta alasannya, bukan ke
+// lobby lama di halaman ini. Studio membuka tab Gabung, mengisi ulang nama &
+// kode, dan menampilkan pesannya (lihat applyJoinParams di index.html).
+function mpBackToStudio(msg){
+  try{
+    const q=new URLSearchParams();
+    const isJoin=MP.handoffMode==='join';
+    const nmEl=document.getElementById(isJoin?'mpJoinName':'mpCreateName');
+    const nm=(MP.wantName||(nmEl&&nmEl.value)||'').trim().slice(0,30);
+    if(isJoin){
+      const jc=(document.getElementById('mpJoinCode').value||'').toUpperCase().replace(/[^A-Z0-9-]/g,'').slice(0,24);
+      if(jc)q.set('join',jc);
+    }
+    if(nm)q.set('name',nm);
+    if(msg)q.set('err',String(msg).slice(0,160));
+    location.replace('index.html?'+q.toString());
+  }catch(e){location.replace('index.html');}
+}
 document.getElementById('btnMpJoin').addEventListener('click',function(){
   if(!MP.ready){mpSetStatus('mpJoinStatus','Belum terhubung ke server.');return;}
   const name=(document.getElementById('mpJoinName').value||'').trim().slice(0,16)||'Pemain';
   const rawJoin=(document.getElementById('mpJoinCode').value||'').trim().toUpperCase();
-  if(!rawJoin){mpSetStatus('mpJoinStatus','Masukkan kode room dari host.');return;}
+  if(!rawJoin){mpSetStatus('mpJoinStatus','Masukkan kode room dari host.');if(MP.handoffMode)mpBackToStudio('Kode room kosong — masukkan kode dari host.');return;}
   // BUG#1: terima tempelan format display "LAB-XXXX-XX" — normalisasi seperti studio.
   // PRD v2 FR-07: terima juga kode kelas (mis. "8A-IPA-2026").
   let code=rawJoin.replace(/[^A-Z0-9-]/g,'');
   if(code.indexOf('LAB')===0&&/^[A-Z0-9]{6}$/.test(code.slice(3).replace(/-/g,'')))code=code.slice(3);
   code=code.replace(/-/g,'').length<=6?code.replace(/-/g,'').slice(0,6):code.slice(0,24);
-  if(code.length!==6&&!/^[A-Z0-9][A-Z0-9-]{1,22}[A-Z0-9]$/.test(code)){mpSetStatus('mpJoinStatus','Kode harus 6 karakter (mis. 7K2QDX), format LAB-XXXX-XX, atau kode kelas.');return;}
+  if(code.length!==6&&!/^[A-Z0-9][A-Z0-9-]{1,22}[A-Z0-9]$/.test(code)){mpSetStatus('mpJoinStatus','Kode harus 6 karakter (mis. 7K2QDX), format LAB-XXXX-XX, atau kode kelas.');if(MP.handoffMode)mpBackToStudio('Kode room tidak valid — harus 6 karakter (mis. LAB-7K2Q-DX).');return;}
   MP.username=name;MP.wantName=name;
   mpSavePlayerName(name);
   MP.lastMode='join';
@@ -5127,7 +5245,7 @@ document.getElementById('btnMpJoin').addEventListener('click',function(){
     btn.disabled=false;
     if(!res||!res.ok){
       mpSetStatus('mpJoinStatus','Gagal: '+((res&&res.error)||'coba lagi'));
-      updateCover();
+      if(MP.handoffMode)mpBackToStudio((res&&res.error)||'Gagal bergabung — coba lagi.');
       return;
     }
     mpSetStatus('mpJoinStatus','Bergabung ke '+mpFormatRoom(res.code),'ok');
@@ -5163,6 +5281,14 @@ function mpLeaveRoom(){
   if(MP.handoffMode)gameGoStudio();
 }
 document.getElementById('mpLeaveBtn').addEventListener('click',mpLeaveRoom);
+// Link undangan → studio dengan tab Gabung + kode terisi (teman tak perlu mengetik kode)
+document.getElementById('mpInviteBtn').addEventListener('click',function(){
+  if(!MP.code)return;
+  const link=location.origin+location.pathname.replace(/[^/]*$/,'')+'index.html?join='+encodeURIComponent(MP.code);
+  const done=function(){showToast('Link undangan disalin');};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(link).then(done).catch(function(){try{prompt('Salin link undangan:',link);}catch(e){}});
+  else{try{prompt('Salin link undangan:',link);}catch(e){}}
+});
 document.getElementById('mpChipToggle').addEventListener('click',function(){document.getElementById('mpPanel').classList.toggle('on');});
 // PRD v1.0 FR-01: ubah nama dari panel Info/MP (persist + update sprite lokal)
 document.getElementById('mpRenameBtn').addEventListener('click',function(){
@@ -6531,6 +6657,15 @@ document.addEventListener('keydown',function(e){
     return;
   }
   if(e.code==='KeyG'){combatToggle();e.preventDefault();return;}
+  // P = tembak (ditahan = beruntun, lihat combatTick). G tetap pengalih mode.
+  if(e.code==='KeyP'){
+    if(!e.repeat){
+      if(!COMBAT.on)showToast('Tekan G dulu untuk masuk mode tembak');
+      else if(camMode!=='fps')showToast('Pindah ke mode FPS (F) untuk nembak');
+      else combatShoot(true);
+    }
+    e.preventDefault();return;
+  }
   if(e.code==='KeyI'){toggleInventory();e.preventDefault();return;}
   if(e.code==='KeyH'){togglePanel();e.preventDefault();return;}
   if(e.code==='Escape'){
@@ -6585,7 +6720,6 @@ document.addEventListener('keydown',function(e){
     PHYS.clearAll();selectedBody=null;renderInspector();updateStats();
     showToast('Ruangan direset kosong');
   }
-  if(e.code==='KeyD'&&!PLACEMENT.active){ downloadLayoutHTML(); e.preventDefault(); }
 });
 document.addEventListener('keyup',function(e){keys[e.code]=false;});
 
@@ -7291,12 +7425,18 @@ function playOpeningJingle(){
 document.getElementById('cover').style.display='none';
 const openingEl=document.getElementById('opening');
 playOpeningJingle();
-// Masuk dari studio (?mode=...) → langsung ke lab: tanpa splash & tanpa cover
-// (cover hanya fallback bila auto-mulai gagal). Buka game.html polos → lobby.
+// Masuk dari studio (?mode=...) → langsung ke lab: tanpa splash & tanpa cover.
+// game.html polos tidak punya apa pun untuk dimasuki → ke studio. Lobby lama
+// (cover) hanya tersisa untuk alur SSO/dev: ?sso=1, ?code=, ?class=, ?lobby=1.
 (function(){
-  let hm='';
-  try{hm=new URL(location.href).searchParams.get('mode')||'';}catch(e){}
+  let hm='',keepLobby=false;
+  try{
+    const sp=new URL(location.href).searchParams;
+    hm=sp.get('mode')||'';
+    keepLobby=['lobby','sso','code','class','classId','webrtc'].some(function(k){return sp.get(k);});
+  }catch(e){keepLobby=true;}
   if(hm){if(openingEl)openingEl.classList.add('hide');return;}
+  if(!keepLobby){location.replace('index.html');return;}
   setTimeout(function(){
     if(openingEl)openingEl.classList.add('hide');
     document.getElementById('cover').style.display='grid';
@@ -7423,20 +7563,21 @@ document.getElementById('btnStart').addEventListener('click',function(e){
       document.querySelectorAll('.mp-panel').forEach(function(p){p.classList.toggle('on',p.dataset.mppanel===mode);});
     }
     // Mulai langsung. Solo tak butuh server; create/join menunggu socket
-    // tersambung (event, bukan polling). Gagal → lobby sebagai jalan manual.
+    // tersambung (event, bukan polling). Koneksi lambat (perangkat lemah /
+    // server baru bangun) TETAP ditunggu — baru menyerah setelah 45 dtk, dan
+    // itu pun kembali ke studio dengan alasannya, bukan ke lobby lama.
     var started=false;
-    var fail=function(msg){
-      if(started)return;started=true;
-      try{document.getElementById('cover').style.display='grid';}catch(e){}
-      try{showToast(msg);}catch(e){}
-    };
     var go=function(){
       if(started)return;started=true;
       document.getElementById(mode==='solo'?'btnStart':(mode==='create'?'btnMpCreate':'btnMpJoin')).click();
     };
     if(mode==='solo'||MP.ready)go();
-    else if(MP.socket){MP.socket.once('connect',go);setTimeout(function(){fail('Server tak terjangkau — coba manual / cek koneksi.');},15000);}
-    else fail('Multiplayer tidak tersedia — coba mode solo.');
+    else if(MP.socket){
+      MP.socket.once('connect',go);
+      setTimeout(function(){if(!started){try{showToast('Masih menyambung ke server…');}catch(e){}}},10000);
+      setTimeout(function(){if(!started){started=true;mpBackToStudio('Server tak terjangkau — cek koneksi internet lalu coba lagi.');}},45000);
+    }
+    else mpBackToStudio('Multiplayer tidak tersedia di perangkat ini.');
   }
 })();
 

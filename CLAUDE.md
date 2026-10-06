@@ -88,6 +88,16 @@ Aplikasi lab IPA 3D multiplayer (Three.js r128 + Socket.IO). Repo: `labipa`
   `?mode=join&room=KODE` → refresh = masuk ruangan yang sama. Kode ruangan
   tampil di SATU tempat: chip topbar `#mpChip` (`#mpCopyCode` salin,
   `#mpChipToggle` buka `#mpPanel`). Keluar room dari alur studio → `index.html`
+- Gagal masuk dari studio (kode salah, room penuh/terkunci, server tak
+  terjangkau 45 dtk) → `mpBackToStudio(msg)` = `index.html?join=&name=&err=`;
+  studio menampilkannya lewat `applyJoinParams()`. `game.html` TANPA `?mode=`
+  dialihkan ke `index.html`; lobby lama (cover) hanya untuk `?sso=1`/`?code=`/
+  `?class=`/`?lobby=1`. Link undangan: `index.html?join=KODE` (`#mpInviteBtn`)
+- Mode tembak: `G` = pengalih mode, `P` atau klik (FPS) = tembak (`P` ditahan
+  = beruntun), `D` HANYA gerak (bukan download). Senjata orang-pertama =
+  `combatBuildWeapon()` (anak `camera`, raycast dimatikan, tampil hanya FPS +
+  mode tembak). Raycaster hitscan WAJIB `rc.camera=camera` — scene berisi
+  Sprite, tanpa itu r128 melempar TypeError dan tembakan batal
 - Gate: `Gate.check()` selalu tanya `/api/gate/status`; bila
   `GATE_REQUIRED=false` → `isLocked()` false & overlay tidak muncul
 - Antrean offline (`LS_QUEUE`) hanya menyimpan snapshot TERBARU; `flushQueue`

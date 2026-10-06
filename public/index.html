@@ -1953,6 +1953,35 @@ function renderResumeRooms() {
   });
 }
 
+// ---- ?join=KODE (link undangan) / ?err=... (gagal masuk dari game.html) ----
+// Buka tab Gabung dengan kode & nama terisi, dan tampilkan alasan gagalnya
+// di sini — pemain tidak lagi dilempar ke lobby lama di game.html.
+function applyJoinParams() {
+  const sp = new URLSearchParams(location.search);
+  const join = (sp.get('join') || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24);
+  const err = (sp.get('err') || '').slice(0, 200);
+  const name = (sp.get('name') || '').slice(0, 30);
+  if (!join && !err) return;
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  const tab = join ? 'join' : 'create';
+  try { toggleRoomPanel(true); } catch (e) {}
+  try { switchRoomTab(tab); } catch (e) {}
+  const nameEl = document.getElementById(tab + '-name');
+  if (nameEl && name && !nameEl.value) nameEl.value = name;
+  if (join) {
+    const codeEl = document.getElementById('join-code');
+    if (codeEl) codeEl.value = formatRoomCode(join);
+  }
+  const st = document.getElementById(join ? 'join-status' : 'room-status');
+  if (err) {
+    if (st) { st.className = 'status-line err'; st.textContent = '[ GAGAL ] ' + err; }
+    showToast(err);
+  } else if (st) {
+    st.className = 'status-line info';
+    st.textContent = '[ UNDANGAN ] Isi nama kamu lalu klik Gabung Room';
+  }
+}
+
 function startSolo() {
   const nameEl = document.getElementById('solo-name');
   const name = (nameEl.value || '').trim();
@@ -2285,6 +2314,7 @@ window.onload = () => {
   // BUG#1: pulihkan sesi (kode room host tetap setelah refresh).
   try { restoreUnifiedState(); } catch (e) {}
   try { renderResumeRooms(); } catch (e) {}
+  try { applyJoinParams(); } catch (e) {}
   // PRD: cleanup room demo > 1 jam + ESC untuk pause
   try {
     const store = demoRoomStore();
