@@ -1,8 +1,8 @@
 // =============================================================
 // LabIPA 3D Studio · Socket.IO Multiplayer + Voice Chat Server
-// PRD v1.0: presence 12 warna, suffix duplikat, event player:*
-//           kompatibel, relay signaling WebRTC (offer/answer/ice),
-//           room lock (host).
+// PRD v1.0: presence 12 warna, suffix duplikat, kanal kanonis peer:*,
+//           relay signaling WebRTC (offer/answer/ice), room lock (host).
+// (Alias player:join/leave/move dihapus — duplikat traffic 20Hz.)
 // PRD v2.0: Auth stub (SSO/OIDC-ready, guest mode), Layout API
 //           (CRUD + version lock + clone/publish/soft-delete),
 //           Room = Kelas (kode deterministik), Live Edit flag,
@@ -519,11 +519,7 @@ function joinRoom(socket, room, name, isHost, avatar, userRole) {
     isHost: !!isHost,
     presence: presence
   });
-  // PRD v1.0 §6.2 — alias event player:join untuk kompatibilitas skema
-  socket.to(room.code).emit('player:join', {
-    id: socket.id, name: presence.username, color: presence.color,
-    position: { x: presence.x, y: presence.y, z: presence.z }
-  });
+  // Alias player:join DIHAPUS (hemat 1 emit tiap join; kanal kanonis = peer:join)
 }
 
 // Keluarkan socket dari room-nya: saat disconnect, atau sebelum create/join
@@ -537,8 +533,7 @@ function leaveRoom(socket) {
   if (!me) return;
   room.peers.delete(socket.id);
   socket.to(room.code).emit('peer:leave', { peer: socket.id });
-  // PRD v1.0 §6.2 — alias player:leave
-  socket.to(room.code).emit('player:leave', { id: socket.id });
+  // Alias player:leave DIHAPUS (kanal kanonis = peer:leave)
 
   if (room.peers.size === 0) {
     // PRD v5.2 FR-43: dunia TETAP ADA saat 0 peserta (idle), tidak dihapus.
@@ -1237,9 +1232,9 @@ app.get('/api/docs', (req, res) => {
     checkpoints: ['POST /api/worlds/:code/checkpoints', 'GET /api/worlds/:code/checkpoints', 'GET .../checkpoints/:cid', 'POST .../checkpoints/:cid/rollback', 'POST /api/worlds/:code/fork', 'POST /api/worlds/:code/archive', 'POST /api/worlds/:code/restore'],
     oidc: ['GET /.well-known/openid-configuration', 'GET /oidc/jwks', 'GET/POST /oidc/login', 'POST /oidc/token', 'GET /oidc/userinfo'],
     misc: ['GET /api/notifications'],
-    socket: ['room:create', 'room:join', 'room:lock(host)', 'participant:role(host)', 'presence:update', 'player:move(alias)',
+    socket: ['room:create', 'room:join', 'room:lock(host)', 'participant:role(host)', 'presence:update',
       'world:update', 'combat:shoot/hit (mode tembak: HP/kill/respawn)', 'voice:start/stop/data', 'voice:offer/answer/ice (WebRTC signaling)',
-      'peer:join/leave/presence', 'player:join/leave (alias)', 'room:host', 'room:state',
+      'peer:join/leave/presence', 'room:host', 'room:state',
       'combat:hit/killed/respawn (siaran HP)']
   });
 });
@@ -1495,10 +1490,8 @@ io.on('connection', (socket) => {
       peer: socket.id,
       presence: { x: p.x, y: p.y, z: p.z, rotY: p.rotY, voice: p.voice }
     });
-    // PRD v1.0 §6.2 — alias player:move
-    socket.to(room.code).emit('player:move', {
-      id: socket.id, position: { x: p.x, y: p.y, z: p.z }, rotation: { yaw: p.rotY }
-    });
+    // Alias player:move DIHAPUS — dulu tiap gerak 20Hz disiarkan 2x
+    // (peer:presence + player:move); sekarang 1x, traffic presence turun ~50%.
   });
 
   // ---------- WORLD STATE ----------
@@ -1644,11 +1637,25 @@ io.on('connection', (socket) => {
     socket.to(room.code).emit('voice:peer-stop', { peer: socket.id });
   });
 
+  // ANTI-DELAY: paket suara basi dibuang, bukan diantrekan. Socket.IO
+  // menumpuk emit biasa saat jaringan macet → delay makin menumpuk
+  // (head-of-line blocking). `volatile` melempar paket yang tak langsung
+  // terkirim — hilang 1 chunk 21ms tak terdengar, tapi delay tetap rendah.
+  const voiceTimes = []; // timestamp kirim 1 dtk terakhir (rate limit per socket)
   socket.on('voice:data', (chunk) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
     if (!chunk) return;
-    socket.to(room.code).emit('voice:data', { peer: socket.id, chunk: chunk });
+    try {
+      const len = chunk.byteLength !== undefined ? chunk.byteLength
+        : (chunk.length !== undefined ? chunk.length : 0);
+      if (len <= 0 || len > 16384) return; // chunk rusak / kebesaran → buang
+      const now = Date.now();
+      while (voiceTimes.length && now - voiceTimes[0] > 1000) voiceTimes.shift();
+      if (voiceTimes.length >= 60) return; // >60 paket/dtk = abnormal → buang
+      voiceTimes.push(now);
+    } catch (e) { return; }
+    socket.volatile.to(room.code).emit('voice:data', { peer: socket.id, chunk: chunk });
   });
 
   // PRD v1.0 §6.2 — relay signaling WebRTC antar peer

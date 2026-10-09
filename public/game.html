@@ -327,6 +327,21 @@ canvas{display:block}
 #inspector .insp-actions button.danger:hover{
   background:var(--alert);color:var(--paper-hi);
 }
+/* Baris warna objek ala Planner 2D (custom material per objek) */
+#inspector .tint-row{
+  display:flex;align-items:center;gap:8px;
+  margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--ink-2);
+}
+#inspector .tint-row .lbl{font-weight:700;letter-spacing:.08em}
+#inspector .tint-row input[type=color]{
+  width:46px;height:26px;padding:1px;cursor:pointer;
+  border:1px solid var(--ink);background:var(--paper-hi);
+}
+#inspector .tint-row button{
+  font-family:var(--mono);font-size:10.5px;font-weight:600;
+  padding:5px 10px;background:var(--paper-hi);color:var(--ink-2);
+  border:1px solid var(--rule);cursor:pointer;
+}
 
 /* ==================================================
    MINIMAP
@@ -355,6 +370,17 @@ canvas{display:block}
   width:200px;height:176px;
   background:var(--paper);
 }
+/* Overlay dimensi ala Planner 2D — hanya di mode 2D Top */
+#dimOverlay{
+  position:absolute;bottom:14px;left:14px;z-index:20;
+  background:var(--paper-hi);border:1px solid var(--ink);
+  border-left:3px solid var(--safety);
+  box-shadow:3px 3px 0 var(--ink);
+  padding:7px 12px;
+  font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.05em;
+  color:var(--ink);display:none;
+}
+#dimOverlay.on{display:block}
 
 /* ==================================================
    HINT / TOAST / ERR
@@ -1540,6 +1566,9 @@ div[data-mppanel="solo"] .cover-cta{
     <button class="tb-btn" id="btnCombat" title="Mode tembak (G) — tembak: klik atau tombol P">
       <span class="ico">🔫</span><span class="lbl-txt">Tembak</span>
     </button>
+    <button class="tb-btn" id="btnRuler" title="Penggaris: ukur jarak 2 titik (M)">
+      <span class="ico">📏</span><span class="lbl-txt">Ukur</span>
+    </button>
   </div>
 
   <div class="spacer"></div>
@@ -1564,6 +1593,9 @@ div[data-mppanel="solo"] .cover-cta{
   </button>
   <button class="tb-btn icon-only" id="btnDownload" title="Download HTML layout">
     <span class="ico">📄</span>
+  </button>
+  <button class="tb-btn icon-only" id="btnDenah" title="Export PNG denah 2D (ala Planner)">
+    <span class="ico">📷</span>
   </button>
   <span id="saveState" class="sv-idle" title="Status simpan">●</span>
 
@@ -1628,6 +1660,7 @@ div[data-mppanel="solo"] .cover-cta{
       <div class="mm-title"><span>MINIMAP</span><span class="scale">12 × 8 m</span></div>
       <canvas id="mmCanvas" width="400" height="352"></canvas>
     </div>
+    <div id="dimOverlay" title="Dimensi ruangan (mode 2D Top)">📐 12 × 8 m · PREP 3 × 4 · STOR 3 × 4</div>
 
     <div id="mpPanel">
       <div class="mp-sect">PEMAIN AKTIF</div>
@@ -1775,6 +1808,10 @@ div[data-mppanel="solo"] .cover-cta{
         <div class="k-row"><span class="kk">BIDIK</span><span class="kd">Arahkan ke meja / rak lemari untuk taruh alat di atasnya</span></div>
         <div class="k-row"><span class="kk">X</span><span class="kd">Hapus / lepas dari dinding</span></div>
         <div class="k-row"><span class="kk">DEL</span><span class="kd">Hapus objek terpilih</span></div>
+        <div class="k-row"><span class="kk">CTRL+Z / Y</span><span class="kd">Batalkan / ulangi (undo-redo)</span></div>
+        <div class="k-row"><span class="kk">CTRL+D</span><span class="kd">Duplikat objek terpilih</span></div>
+        <div class="k-row"><span class="kk">M</span><span class="kd">Penggaris: ukur jarak 2 titik</span></div>
+        <div class="k-row"><span class="kk">N</span><span class="kd">Grid 0.5 m on/off (mode 2D)</span></div>
         <div class="k-row"><span class="kk">K / J</span><span class="kd">Simpan / muat</span></div>
         <div class="k-row"><span class="kk">R</span><span class="kd">Reset ruangan</span></div>
       </div>
@@ -1797,6 +1834,15 @@ div[data-mppanel="solo"] .cover-cta{
       <h1>Pilih Perabot</h1>
       <p>Klik item untuk masuk mode menata. Scroll untuk atur jarak, Q/E putar, klik untuk taruh. Arahkan bidik ke <b>atas meja</b> atau <b>rak lemari kaca</b> untuk menaruh alat di sana.</p>
     </header>
+
+    <section class="inv-section">
+      <div class="inv-section-title"><span>🏫 TEMPLATE CEPAT</span><span class="inv-count">ala Planner 2D</span></div>
+      <div class="inv-grid">
+        <button class="inv-item furniture" data-tpl="standar"><span class="inv-ico">🏫</span><span class="inv-nm">Lab Standar</span><span class="inv-mt">6 meja · 24 kursi · siap ajar</span></button>
+        <button class="inv-item furniture" data-tpl="ushape"><span class="inv-ico">⛩</span><span class="inv-nm">Lab U-Shape</span><span class="inv-mt">diskusi · 5 meja</span></button>
+        <button class="inv-item furniture" data-tpl="kosong"><span class="inv-ico">🧹</span><span class="inv-nm">Ruangan Kosong</span><span class="inv-mt">hapus semua item</span></button>
+      </div>
+    </section>
 
     <section class="inv-section">
       <div class="inv-section-title"><span>MEBEL &amp; PERABOT</span><span class="inv-count">7 item</span></div>
@@ -2096,7 +2142,9 @@ camera.rotation.order='YXZ';
 const orthoCam=new THREE.OrthographicCamera(-10,10,10,-10,0.1,300);
 
 const renderer=new THREE.WebGLRenderer({antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+// Laptop sekolah (iGPU): batasi pixel ratio 1.5 + shadow 1024 — fill-rate
+// turun ~40%, visual indoor nyaris identik (dulu 2.0 + 2048).
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -2108,7 +2156,7 @@ const ambient=new THREE.AmbientLight(0xffffff,0.25);scene.add(ambient);
 // LAYER 1 KEY (matahari, satu-satunya shadow-caster luar ruang)
 const sun=new THREE.DirectionalLight(0xFFF4E0,1.6);
 sun.position.set(42,58,26);sun.castShadow=true;
-sun.shadow.mapSize.width=2048;sun.shadow.mapSize.height=2048;
+sun.shadow.mapSize.width=1024;sun.shadow.mapSize.height=1024;
 sun.shadow.camera.left=-50;sun.shadow.camera.right=50;
 sun.shadow.camera.top=50;sun.shadow.camera.bottom=-50;
 sun.shadow.camera.near=1;sun.shadow.camera.far=170;
@@ -2331,9 +2379,9 @@ for(let i=-19;i<=19;i+=2.5){
   roof.position.y=2.9;roof.rotation.y=Math.PI/4;roof.castShadow=true;g.add(roof);
   const win=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.9,0.06),bldGlassMat);
   win.position.set(0,1.5,1.12);g.add(win);
-  const gate1=new THREE.Mesh(new THREE.BoxGeometry(0.12,1.6,3),fenceMat);
-  gate1.position.set(-1.5,0.8,-2.5);scene.add(gate1);
-  const gate2=gate1.clone();gate2.position.x=2.5;scene.add(gate2);
+  // gate1/gate2 DIHAPUS: dulu ke-scene.add dengan koordinat mentah
+  // (-1.5 & 2.5, z=-2.5) hingga nancep di dalam ruang lab sebagai 2 balok
+  // misterius — seharusnya menempel grup pos satpam (-4,0,19).
 })();
 // ---- Parkir + marka (timur lapangan) ----
 (function(){
@@ -2835,7 +2883,7 @@ const PHYS={
       return {itemKey:b.itemKey,
         pos:{x:b.mesh.position.x,y:b.mesh.position.y,z:b.mesh.position.z},
         rotY:b.mesh.rotation.y,stuck:b.stuck,stuckSurface:b.stuckSurface,
-        by:b.by||null,byMod:b.byMod||null};
+        by:b.by||null,byMod:b.byMod||null,tint:b.tint||null};
     });
   }
 };
@@ -3695,8 +3743,12 @@ function toggleColliderDebug(){
 document.addEventListener('keydown',function(e){
   try{
     if((e.ctrlKey||e.metaKey)&&String(e.key||'').toLowerCase()==='d'){
+      const tg=(e.target&&e.target.tagName)||'';
+      if(tg==='INPUT'||tg==='TEXTAREA'||tg==='SELECT'||(e.target&&e.target.isContentEditable))return;
       e.preventDefault();
-      toggleColliderDebug();
+      // Objek dipilih → duplikat (ala Planner); tanpa seleksi → debug collider lama
+      if(typeof selectedBody!=='undefined'&&selectedBody){try{duplicateSelected();}catch(err){}}
+      else toggleColliderDebug();
     }
   }catch(err){}
 });
@@ -3774,6 +3826,7 @@ document.querySelectorAll('.insp-tabs button').forEach(function(b){
 let camMode='orbit';
 const orbit={target:new THREE.Vector3(PX,1.2,PZ),theta:Math.PI*0.25,phi:Math.PI*0.35,r:14};
 const topView={target:new THREE.Vector3(PX,0,PZ),zoom:1};
+let topProjDirty=true; // frustum ortho dihitung ulang hanya saat zoom/resize
 
 const cvs=renderer.domElement;
 let isLocked=false;
@@ -3790,6 +3843,11 @@ function setCamMode(m){
   if(crosshairEl)crosshairEl.classList.toggle('on',m==='fps'&&isLocked);
   // Atap transparan di mode Top
   if(typeof ceilings!=='undefined') ceilings.forEach(function(c){ c.material.opacity=(m==='top')?0.12:1; c.visible=true; });
+  // Ala Planner 2D: grid 0.5 m + overlay dimensi otomatis di mode 2D Top
+  try{
+    gridForce=null;gridApply();
+    document.getElementById('dimOverlay').classList.toggle('on',m==='top');
+  }catch(e){}
   if(m==='fps'){
     if(!isLocked&&!inventoryOpen&&!panelOpen&&!stdEl.classList.contains('on')){
       try{cvs.requestPointerLock();}catch(_){}
@@ -3831,6 +3889,7 @@ window.addEventListener('mouseup',function(e){
   document.getElementById('viewWrap').classList.remove('grabbing');
   const move=Math.abs(e.clientX-dragStartX)+Math.abs(e.clientY-dragStartY);
   if(move<4&&camMode!=='fps'){
+    if(RULER.on){ rulerClick(e.clientX,e.clientY); return; }
     if(tryToggleDoorAtScreen(e.clientX,e.clientY)) return;
     trySelectAtScreen(e.clientX,e.clientY);
   }
@@ -3845,6 +3904,7 @@ cvs.addEventListener('wheel',function(e){
     orbit.r=Math.max(4,Math.min(40,orbit.r+e.deltaY*0.01));
   }else if(camMode==='top'){
     topView.zoom=Math.max(0.4,Math.min(4,topView.zoom-e.deltaY*0.001));
+    topProjDirty=true;
   }
 },{passive:false});
 
@@ -3909,12 +3969,16 @@ function renderInspector(){
         '<span class="lbl">Selimut</span><span class="val">'+blanket+'</span>'+
         '<span class="lbl">Spill</span><span class="val">'+spill+'</span>'+
         '<span class="lbl">Eyewash</span><span class="val">'+eyewash+'</span>'+
+        '<span class="lbl">Estimasi RAB</span><span class="val">'+fmtRp(rabTotal())+'</span>'+
       '</div>'+
       '<div class="insp-actions">'+
         '<button class="wide" id="inspStd">🔍 Cek Standar</button>'+
+        '<button class="wide" id="inspRAB">📋 Salin RAB belanja</button>'+
       '</div>';
     const b2=document.getElementById('inspStd');
     if(b2)b2.addEventListener('click',openStd);
+    const rb=document.getElementById('inspRAB');
+    if(rb)rb.addEventListener('click',copyRAB);
     return;
   }
   if(!selectedBody){
@@ -3941,11 +4005,15 @@ function renderInspector(){
       (b.by?'<span class="lbl">Dibuat</span><span class="val">'+escName(b.by)+'</span>':'')+
       (b.byMod&&b.byMod!==b.by?'<span class="lbl">Diubah</span><span class="val">'+escName(b.byMod)+'</span>':'')+
     '</div>'+
+    '<div class="tint-row"><span class="lbl">Warna</span>'+
+      '<input type="color" id="inspTint" value="'+(b.tint||'#D97706')+'" title="Ganti warna objek">'+
+      '<button data-act="tintReset" title="Kembalikan warna asli">Reset</button></div>'+
     '<div class="insp-actions">'+
       '<button data-act="rotL">⟲ −15°</button>'+
       '<button data-act="rotR">⟳ +15°</button>'+
       '<button data-act="unstick">↧ Jatuhkan</button>'+
       '<button data-act="focus">🎯 Fokus</button>'+
+      '<button data-act="dup">⧉ Duplikat</button>'+
       '<button class="wide danger" data-act="delete">🗑 Hapus objek</button>'+
     '</div>';
   body.querySelectorAll('button[data-act]').forEach(function(btn){
@@ -3958,13 +4026,26 @@ function renderInspector(){
       if(a==='unstick'){PHYS.unstick(b);showToast('Dilepas: '+b.label);}
       if(a==='focus'){orbit.target.copy(b.mesh.position);showToast('Fokus ke '+b.label);}
       if(a==='delete'){
+        undoPush();
         scene.remove(b.mesh);
         const idx=PHYS.bodies.indexOf(b);if(idx>=0)PHYS.bodies.splice(idx,1);
         selectedBody=null;renderInspector();updateStats();
         showToast('Dihapus: '+b.label);
       }
+      if(a==='dup'){duplicateSelected();}
+      if(a==='tintReset'){undoPush();resetTint(b);renderInspector();showToast('Warna dikembalikan');}
     });
   });
+  // Color picker: dorong undo sekali per sesi pilih (bukan per geser)
+  const tintEl=body.querySelector('#inspTint');
+  if(tintEl){
+    let tintPushed=false;
+    tintEl.addEventListener('input',function(){
+      if(mpBlockWatchTab())return;
+      if(!tintPushed){undoPush();tintPushed=true;}
+      applyTint(b,tintEl.value);
+    });
+  }
 }
 
 // =============================================================
@@ -3977,6 +4058,9 @@ const PLACEMENT={active:false,item:null,ghost:null,rotY:0,dist:2.4,snap:'floor',
 // Raycast dari tengah layar ke furnitur penopang; kembalikan {x,y,z,hostLabel,hostKey}
 // atau null bila tidak membidik permukaan yg muat utk alat.
 const _supportRC=new THREE.Raycaster();
+// Dipakai ulang tiap frame saat menata (hindari alokasi per frame)
+const _placeRC=new THREE.Raycaster();
+const _placeNDC=new THREE.Vector2(0,0);
 function findSupportSurface(itemKey){
   if(TABLETOP_TOOLS.indexOf(itemKey)<0)return null;
   const def=MAKERS[itemKey];if(!def)return null;
@@ -4123,9 +4207,8 @@ function updatePlacement(){
     // tidak meleset saat kamera menengadah/menunduk (pitch).
     // Jarak dijepit 1..8 m; scroll mouse tetap menggeser PLACEMENT.dist.
     try{
-      const rc=new THREE.Raycaster();
-      rc.setFromCamera(new THREE.Vector2(0,0),camera);
-      const o=rc.ray.origin,d=rc.ray.direction;
+      _placeRC.setFromCamera(_placeNDC,camera);
+      const o=_placeRC.ray.origin,d=_placeRC.ray.direction;
       if(Math.abs(d.y)>1e-4){
         const t=(0-o.y)/d.y;
         if(t>0){
@@ -4206,6 +4289,7 @@ function confirmPlacement(){
   let effSnap=PLACEMENT.snap;
   if(effSnap==='wall'&&!nearWall)effSnap='floor';
 
+  undoPush(); // state sebelum item baru (Ctrl+Z)
   scene.remove(PLACEMENT.ghost);PLACEMENT.ghost=null;
   // PRD v2: peringatkan bila posisi baru menabrak furnitur lain (tetap boleh taruh).
   const _hit=checkPlacementOverlap(pos,def,ghostRotY);
@@ -4245,11 +4329,343 @@ function rotatePlacement(d){if(!PLACEMENT.active)return;PLACEMENT.rotY+=d;update
 function removeSelectedOrCrosshair(){
   if(mpBlockWatchTab())return;
   if(selectedBody){
+    undoPush();
     scene.remove(selectedBody.mesh);
     const i=PHYS.bodies.indexOf(selectedBody);if(i>=0)PHYS.bodies.splice(i,1);
     selectedBody=null;renderInspector();updateStats();
     showToast('Dihapus');return;
   }
+}
+
+// =============================================================
+// FITUR ALA PLANNER 2D — penggaris, undo/redo, duplikat, template,
+// warna objek, estimasi RAB, export PNG denah, grid 0.5 m.
+// Semua mutasi mendorong snapshot ke UNDO dan otomatis tersinkron
+// multiplayer lewat fingerprint (mpMaybePushWorld).
+// =============================================================
+
+// ---------- Harga satuan estimasi (IDR) untuk RAB belanja ----------
+const PRICE={
+  'table':2800000,'chair':450000,'teacher-desk':1900000,'cabinet':2200000,
+  'cabinet-glass':3100000,'sink-unit':1600000,'board':950000,'tube-rack':180000,
+  'beaker-set':350000,'microscope':3800000,'bunsen':250000,'flask':120000,
+  'scale':2400000,'stand':380000,'cylinder':95000,'apar':1100000,'p3k':320000,
+  'blanket':280000,'spill':650000,'eyewash':8500000,'ac':5200000,
+  'ventilasi':750000,'lamp-ceiling':420000,'lamp-tl':310000,'lamp-led':380000
+};
+function fmtRp(n){try{return 'Rp '+Math.round(n).toLocaleString('id-ID');}catch(e){return 'Rp '+Math.round(n);}}
+function rabTotal(){let t=0;try{for(let i=0;i<PHYS.bodies.length;i++)t+=PRICE[PHYS.bodies[i].itemKey]||0;}catch(e){}return t;}
+function copyRAB(){
+  try{
+    const cnt={};
+    for(let i=0;i<PHYS.bodies.length;i++){const k=PHYS.bodies[i].itemKey;cnt[k]=(cnt[k]||0)+1;}
+    const lines=['RAB LAB IPA (estimasi pengadaan)'];
+    let total=0;
+    Object.keys(cnt).forEach(function(k){
+      const def=MAKERS[k];const sub=(PRICE[k]||0)*cnt[k];total+=sub;
+      lines.push('- '+((def&&def.label)||k)+' x '+cnt[k]+' = '+fmtRp(sub));
+    });
+    lines.push('TOTAL = '+fmtRp(total));
+    const txt=lines.join('\n');
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(function(){
+        showToast('RAB disalin ('+fmtRp(total)+')');
+      }).catch(function(){showToast('Gagal salin — clipboard diblokir');});
+    }else showToast('Clipboard tak tersedia');
+  }catch(e){showToast('Gagal salin RAB');}
+}
+
+// ---------- Snapshot satu body (termasuk warna tint) ----------
+function snapOf(b){
+  if(!b||!b.mesh)return null;
+  return {itemKey:b.itemKey,
+    pos:{x:b.mesh.position.x,y:b.mesh.position.y,z:b.mesh.position.z},
+    rotY:b.mesh.rotation.y,stuck:!!b.stuck,stuckSurface:b.stuckSurface||null,
+    by:b.by||null,byMod:b.byMod||null,tint:b.tint||null};
+}
+
+// ---------- UNDO / REDO (dua tumpukan snapshot dunia) ----------
+const UNDO={u:[],r:[],max:50};
+function undoPush(){
+  // Simpan state SEBELUM mutasi; redo dibuang tiap ada aksi baru.
+  try{
+    UNDO.u.push(PHYS.serialize());
+    if(UNDO.u.length>UNDO.max)UNDO.u.shift();
+    UNDO.r.length=0;
+  }catch(e){}
+}
+function undoRestore(items){
+  try{
+    if(PLACEMENT.active)cancelPlacement();
+    rulerClear(true);
+    PHYS.clearAll();selectedBody=null;
+    const src=Array.isArray(items)?items:[];
+    for(let i=0;i<src.length;i++){try{mpSpawnSnapshotItem(src[i]);}catch(e){}}
+    renderInspector();updateStats();
+  }catch(e){}
+}
+function undoDo(){
+  if(!UNDO.u.length){showToast('Tidak ada yang dibatalkan');return;}
+  try{UNDO.r.push(PHYS.serialize());}catch(e){}
+  undoRestore(UNDO.u.pop());
+  showToast('Dibatalkan');
+}
+function redoDo(){
+  if(!UNDO.r.length){showToast('Tidak ada yang diulangi');return;}
+  try{UNDO.u.push(PHYS.serialize());}catch(e){}
+  undoRestore(UNDO.r.pop());
+  showToast('Diulangi');
+}
+
+// ---------- WARNA OBJEK (tint material per objek, ala Planner) ----------
+// Model memakai material library SHARED → wajib clone dulu supaya
+// objek lain yang memakai material sama tidak ikut berubah warna.
+function applyTint(b,hex){
+  if(!b||!b.mesh||!hex)return;
+  b.tint=hex;
+  const col=new THREE.Color(hex);
+  b.mesh.traverse(function(o){
+    if(!o.isMesh)return;
+    const setM=function(m){
+      if(!m||!m.color)return m;
+      if(m.userData&&m.userData._tintClone){m.color.copy(col);return m;}
+      const c=m.clone();c.color.copy(col);
+      c.userData._tintClone=true;
+      try{c.userData._origColor=m.color.getHex();}catch(e){}
+      return c;
+    };
+    if(Array.isArray(o.material))o.material=o.material.map(setM);
+    else if(o.material)o.material=setM(o.material);
+  });
+}
+function resetTint(b){
+  if(!b||!b.mesh)return;
+  b.tint=null;
+  b.mesh.traverse(function(o){
+    if(!o.isMesh)return;
+    const rst=function(m){
+      if(!m||!m.color||!m.userData||!m.userData._tintClone)return m;
+      try{m.color.setHex(m.userData._origColor);}catch(e){}
+      return m;
+    };
+    if(Array.isArray(o.material))o.material=o.material.map(rst);
+    else if(o.material)o.material=rst(o.material);
+  });
+}
+
+// ---------- DUPLIKAT OBJEK ----------
+function duplicateSelected(){
+  if(!selectedBody){showToast('Pilih objek dulu untuk duplikat');return;}
+  if(mpBlockWatchTab())return;
+  try{if(window.LabIPA&&window.LabIPA.isViewer&&window.LabIPA.isViewer()){showToast('Mode menonton — read-only');return;}}catch(e){}
+  try{if(typeof MP!=='undefined'&&MP.myRole==='viewer'){showToast('Peranmu viewer — read-only');return;}}catch(e){}
+  const s=snapOf(selectedBody);
+  if(!s||!MAKERS[s.itemKey])return;
+  // Geser 45cm; alat di atas meja yang digeser keluar permukaan → jatuhkan ke lantai
+  if(s.stuckSurface==='support'){s.stuck=true;s.stuckSurface='floor';s.pos.y=0;}
+  s.pos.x=Math.max(LX+0.3,Math.min(RX-0.3,s.pos.x+0.45));
+  s.pos.z=Math.max(BZ+0.3,Math.min(FZ-0.3,s.pos.z+0.45));
+  try{s.by=(typeof MP!=='undefined'&&MP.username)?MP.username:'solo';}catch(e){}
+  undoPush();
+  if(mpSpawnSnapshotItem(s)){
+    selectedBody=PHYS.bodies[PHYS.bodies.length-1]||null;
+    renderInspector();updateStats();
+    showToast('Diduplikat: '+MAKERS[s.itemKey].label);
+  }
+}
+
+// ---------- PENGGARIS (ukur jarak 2 titik di lantai, tombol M) ----------
+const RULER={on:false,pts:[],group:null};
+function makeTextSprite(text){
+  const cnv=document.createElement('canvas');cnv.width=256;cnv.height=64;
+  const x=cnv.getContext('2d');
+  x.fillStyle='rgba(27,42,65,0.92)';x.fillRect(0,0,256,64);
+  x.strokeStyle='#F0A034';x.lineWidth=4;x.strokeRect(3,3,250,58);
+  x.fillStyle='#F5F0E0';x.font='700 30px "IBM Plex Mono",monospace';
+  x.textAlign='center';x.textBaseline='middle';x.fillText(text,128,34);
+  const tex=new THREE.CanvasTexture(cnv);
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true}));
+  spr.scale.set(1.15,0.29,1);spr.renderOrder=998;
+  return spr;
+}
+function rulerClear(silent){
+  try{if(RULER.group){scene.remove(RULER.group);RULER.group=null;}}catch(e){}
+  RULER.pts=[];
+  if(!silent){try{document.getElementById('placeHint').classList.remove('on');}catch(e){}}
+}
+function rulerOn(){
+  if(PLACEMENT.active)cancelPlacement();
+  RULER.on=true;RULER.pts=[];
+  try{document.getElementById('btnRuler').classList.add('on');}catch(e){}
+  const h=document.getElementById('placeHint');
+  h.innerHTML='PENGARIS: <span class="d">klik 2 titik di lantai · M/X batal</span>';
+  h.classList.add('on');
+  showToast('Mode ukur: klik 2 titik');
+}
+function rulerOff(){
+  RULER.on=false;
+  rulerClear();
+  try{document.getElementById('btnRuler').classList.remove('on');}catch(e){}
+}
+function rulerToggle(){RULER.on?rulerOff():rulerOn();}
+function rulerAtScreen(px,py){
+  try{
+    const rect=cvs.getBoundingClientRect();
+    const nx=((px-rect.left)/rect.width)*2-1;
+    const ny=-((py-rect.top)/rect.height)*2+1;
+    const rc=new THREE.Raycaster();
+    rc.setFromCamera(new THREE.Vector2(nx,ny),(camMode==='top')?orthoCam:camera);
+    const o=rc.ray.origin,d=rc.ray.direction;
+    if(Math.abs(d.y)<1e-5)return null;
+    const t=(0-o.y)/d.y;
+    if(t<0)return null;
+    return new THREE.Vector3(o.x+d.x*t,0,o.z+d.z*t);
+  }catch(e){return null;}
+}
+function rulerClick(px,py){
+  if(camMode==='fps'){showToast('Ukur di mode Orbit / 2D Top');return;}
+  const p=rulerAtScreen(px,py);
+  if(!p)return;
+  RULER.pts.push(p);
+  if(RULER.pts.length===1){showToast('Titik 1 OK — klik titik 2');return;}
+  rulerDraw(RULER.pts[0],RULER.pts[1]);
+  RULER.pts=[];
+}
+function rulerDraw(a,b){
+  rulerClear(true);
+  try{
+    const g=new THREE.Group();
+    const y=0.05;
+    const geo=new THREE.BufferGeometry().setFromPoints(
+      [new THREE.Vector3(a.x,y,a.z),new THREE.Vector3(b.x,y,b.z)]);
+    g.add(new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xD97706})));
+    [a,b].forEach(function(p){
+      const m=new THREE.Mesh(new THREE.SphereGeometry(0.06,12,10),
+        new THREE.MeshBasicMaterial({color:0xD97706}));
+      m.position.set(p.x,y,p.z);g.add(m);
+    });
+    const spr=makeTextSprite(a.distanceTo(b).toFixed(2)+' m');
+    spr.position.set((a.x+b.x)/2,0.55,(a.z+b.z)/2);
+    g.add(spr);
+    scene.add(g);RULER.group=g;
+  }catch(e){}
+}
+
+// ---------- TEMPLATE CEPAT (starter layout ala Planner) ----------
+function tplSnap(itemKey,x,z,rotY,wall){
+  return {itemKey:itemKey,pos:{x:x,y:0,z:z},rotY:rotY||0,
+    stuck:true,stuckSurface:wall?'wall':'floor',by:null,byMod:null,tint:null};
+}
+function tplStandar(){
+  const items=[];
+  items.push(tplSnap('teacher-desk',1,-3.2,0));
+  items.push(tplSnap('board',1,-3.5,0,true));
+  items.push(tplSnap('cabinet',-4.3,-3.3,0));
+  items.push(tplSnap('sink-unit',-4.3,3.3,0));
+  items.push(tplSnap('apar',6.5,-3.5,0));
+  const cols=[-0.5,2.3],rows=[-2.1,0.2,2.5];
+  for(let r=0;r<rows.length;r++)for(let c=0;c<cols.length;c++){
+    const tx=cols[c],tz=rows[r];
+    items.push(tplSnap('table',tx,tz,0));
+    items.push(tplSnap('chair',tx-0.45,tz-0.85,Math.PI));
+    items.push(tplSnap('chair',tx+0.45,tz-0.85,Math.PI));
+    items.push(tplSnap('chair',tx-0.45,tz+0.85,0));
+    items.push(tplSnap('chair',tx+0.45,tz+0.85,0));
+  }
+  return items;
+}
+function tplUShape(){
+  const items=[];
+  items.push(tplSnap('teacher-desk',1,-3.2,0));
+  items.push(tplSnap('board',1,-3.5,0,true));
+  items.push(tplSnap('cabinet',-4.3,-3.3,0));
+  items.push(tplSnap('apar',6.5,-3.5,0));
+  const backs=[-1.3,0.7,2.7];
+  backs.forEach(function(tx){
+    items.push(tplSnap('table',tx,2.3,0));
+    items.push(tplSnap('chair',tx-0.45,3.15,0));
+    items.push(tplSnap('chair',tx+0.45,3.15,0));
+  });
+  items.push(tplSnap('table',-2.6,0.4,Math.PI/2));
+  items.push(tplSnap('table',3.8,0.4,Math.PI/2));
+  items.push(tplSnap('chair',-3.45,-0.1,Math.PI/2));
+  items.push(tplSnap('chair',-3.45,0.9,Math.PI/2));
+  items.push(tplSnap('chair',4.65,-0.1,-Math.PI/2));
+  items.push(tplSnap('chair',4.65,0.9,-Math.PI/2));
+  return items;
+}
+function applyTemplate(name){
+  if(mpBlockWatchTab())return;
+  try{if(window.LabIPA&&window.LabIPA.isViewer&&window.LabIPA.isViewer()){showToast('Mode menonton — read-only');return;}}catch(e){}
+  try{if(typeof MP!=='undefined'&&MP.myRole==='viewer'){showToast('Peranmu viewer — read-only');return;}}catch(e){}
+  if(name==='kosong'){
+    if(!PHYS.bodies.length){showToast('Ruangan sudah kosong');return;}
+    if(!confirm('Hapus SEMUA item di ruangan?'))return;
+    undoPush();
+    if(PLACEMENT.active)cancelPlacement();
+    rulerClear(true);
+    PHYS.clearAll();selectedBody=null;renderInspector();updateStats();
+    showToast('Ruangan dikosongkan');
+    return;
+  }
+  if(PHYS.bodies.length&&!confirm('Ganti isi ruangan dengan template? (batal via Ctrl+Z)'))return;
+  const items=(name==='ushape')?tplUShape():tplStandar();
+  undoPush();
+  if(PLACEMENT.active)cancelPlacement();
+  rulerClear(true);
+  PHYS.clearAll();selectedBody=null;
+  let ok=0;
+  for(let i=0;i<items.length;i++){try{if(mpSpawnSnapshotItem(items[i]))ok++;}catch(e){}}
+  renderInspector();updateStats();
+  try{closeInventory();}catch(e){}
+  showToast('Template dimuat ('+ok+' item)');
+}
+
+// ---------- EXPORT PNG DENAH 2D (dari minimap) ----------
+function exportDenahPNG(){
+  try{
+    drawMM();
+    const src=document.getElementById('mmCanvas');
+    const W=1200,H=1150;
+    const c=document.createElement('canvas');c.width=W;c.height=H;
+    const x=c.getContext('2d');
+    x.fillStyle='#EDE7D3';x.fillRect(0,0,W,H);
+    x.fillStyle='#1B2A41';x.font='700 34px "IBM Plex Mono",monospace';x.textAlign='center';
+    x.fillText('DENAH LAB IPA — 12 x 8 m',W/2,52);
+    x.font='400 22px "IBM Plex Mono",monospace';x.fillStyle='#3D4A5C';
+    x.fillText(PHYS.bodies.length+' item · '+
+      new Date().toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}),W/2,86);
+    x.drawImage(src,50,110,W-100,H-160);
+    x.strokeStyle='#1B2A41';x.lineWidth=4;x.strokeRect(50,110,W-100,H-160);
+    const a=document.createElement('a');
+    a.download='denah-lab-ipa.png';a.href=c.toDataURL('image/png');a.click();
+    showToast('Denah 2D diexport (PNG)');
+  }catch(e){showToast('Export gagal');}
+}
+
+// ---------- GRID 0.5 m (kotak Planner, otomatis di mode 2D Top) ----------
+let gridHelper=null,gridForce=null;
+function gridEnsure(){
+  if(gridHelper)return;
+  try{
+    gridHelper=new THREE.GridHelper(12,24,0x8B7355,0xB9A88A);
+    gridHelper.position.set(PX,0.02,PZ);
+    gridHelper.material.transparent=true;
+    gridHelper.material.opacity=0.35;
+    scene.add(gridHelper);
+  }catch(e){}
+}
+function gridApply(){
+  gridEnsure();
+  if(!gridHelper)return;
+  gridHelper.visible=(gridForce!==null)?gridForce:(camMode==='top');
+}
+function gridToggle(){
+  gridEnsure();
+  if(!gridHelper)return;
+  gridForce=!gridHelper.visible;
+  gridApply();
+  showToast(gridForce?'Grid 0.5 m ON':'Grid OFF');
 }
 
 // =============================================================
@@ -4776,6 +5192,8 @@ function combatUpdateHpBars(){
 }
 // Dipanggil tiap frame dari animate(): efek + regen + dummy.
 function combatTick(dt){
+  // Idle total (tembak mati, tanpa efek/dummy) → lewati seluruh kerja
+  if(!COMBAT.on&&!COMBAT.tracers.length&&!COMBAT.sparks.length&&!COMBAT.dummies.length)return;
   if(COMBAT.on&&keys.KeyP)combatShoot(true); // P ditahan = tembak beruntun (dibatasi cooldown)
   combatTickWeapon(dt);
   for(let i=COMBAT.tracers.length-1;i>=0;i--){
@@ -5059,35 +5477,8 @@ function mpPostStateToParent(){
     if(pres)showToast((pres.username||'Pemain')+' keluar');
     mpRenderPlayerList();
   });
-  // PRD v1.0 §6.2 — alias player:join/leave/move (kompatibel skema PRD)
-  MP.socket.on('player:join',(m)=>{
-    if(!m||!m.id||MP.peers.has(m.id))return;
-    MP.peers.set(m.id,{uid:m.id,username:(m.name||'Pemain'),color:m.color||'#3D7EA6',voice:false,
-      x:(m.position&&m.position.x)||1,y:1.6,z:(m.position&&m.position.z)||6,rotY:0});
-    if(!MP.avatars.has(m.id))MP.avatars.set(m.id,mpCreateAvatar(m.color||'#3D7EA6',m.name||'Pemain',null));
-    showToast((m.name||'Pemain')+' bergabung');
-    mpRenderPlayerList();
-  });
-  MP.socket.on('player:leave',(m)=>{
-    if(!m||!m.id)return;
-    const pres=MP.peers.get(m.id);
-    MP.peers.delete(m.id);
-    const av=MP.avatars.get(m.id);
-    if(av){scene.remove(av.group);MP.avatars.delete(m.id);}
-    if(pres){showToast((pres.username||'Pemain')+' keluar');mpRenderPlayerList();}
-  });
-  MP.socket.on('player:move',(m)=>{
-    if(!m||!m.id)return;
-    const p=MP.peers.get(m.id);
-    const pos=m.position||{};
-    if(p){if(typeof pos.x==='number')p.x=pos.x;if(typeof pos.z==='number')p.z=pos.z;if(m.rotation&&typeof m.rotation.yaw==='number')p.rotY=m.rotation.yaw;}
-    const av=MP.avatars.get(m.id);
-    if(av&&typeof pos.x==='number'){
-      av.targetPos.set(pos.x,(typeof pos.y==='number'?pos.y:1.6)-1.6,pos.z);
-      av.targetRotY=(m.rotation&&m.rotation.yaw)||0;
-      if(!av.inited){av.group.position.copy(av.targetPos);av.group.rotation.y=av.targetRotY;av.inited=true;}
-    }
-  });
+  // Server hanya mengirim kanal kanonis peer:* (alias player:* dihapus
+  // agar gerak 20Hz tidak diproses dua kali).
   MP.socket.on('room:locked',(m)=>{
     mpSyncLockBtn(!!(m&&m.locked));
     showToast(m&&m.locked?'Room dikunci host':'Room dibuka host');
@@ -5490,7 +5881,7 @@ if(!window._mpRoleWired){
   }catch(e){}
   // Sprint 5 FR-43: kamera terakhir per user (restore) + polling notifikasi
   try{
-    let camRestored=false;
+    let camRestored=false,lastCamDoc='';
     setInterval(function(){
       try{
         if(typeof camMode==='undefined')return;
@@ -5499,6 +5890,7 @@ if(!window._mpRoleWired){
           try{
             const raw=localStorage.getItem('labipa.camera');
             if(raw){
+              lastCamDoc=raw;
               const c=JSON.parse(raw);
               if(c&&c.mode&&typeof setCamMode==='function'&&c.mode!==camMode){try{setCamMode(c.mode);}catch(e){}}
               if(c&&c.orbit&&typeof orbit!=='undefined'&&orbit.target){
@@ -5517,7 +5909,9 @@ if(!window._mpRoleWired){
             doc.orbit={x:orbit.target.x,y:orbit.target.y,z:orbit.target.z,theta:orbit.theta,phi:orbit.phi,radius:orbit.radius};
           }
         }catch(e){}
-        try{localStorage.setItem('labipa.camera',JSON.stringify(doc));}catch(e){}
+        // Tulis hanya bila berubah — localStorage.setItem sinkron & block
+        const s=JSON.stringify(doc);
+        if(s!==lastCamDoc){lastCamDoc=s;try{localStorage.setItem('labipa.camera',s);}catch(e){}}
       }catch(e){}
     },10000);
   }catch(e){}
@@ -5729,6 +6123,7 @@ function mpSpawnSnapshotItem(it){
       const b=PHYS.add(real,{label:def.label,aabb:def.aabb,type:def.type,
         itemKey:it.itemKey,rest:0.15,fric:0.85,
         adhesive:it.stuckSurface||'floor',by:it.by||null,byMod:it.byMod||null});
+    if(it.tint){try{applyTint(b,it.tint);}catch(e){}}
 
     if(it.stuck && it.stuckSurface==='wall'){
       const halfSpan=Math.max(def.aabb.w,def.aabb.d)/2;
@@ -6076,10 +6471,12 @@ function mpTick(dt){
 // =============================================================
 // VOICE CHAT — WebSocket audio streaming (raw PCM Int16)
 // PRD v1.0 FR-02: echoCancellation + noiseSuppression + AGC aktif,
-// jitter buffer 80ms, playback via DynamicsCompressor + Gain
+// jitter buffer 50ms, playback via DynamicsCompressor + Gain
 // normalisasi (anti clipping), indikator kualitas tiap 2 detik.
-// Mode WebRTC P2P (Opus, playoutDelayHint=0.05) tersedia bila
-// URL memakai ?webrtc=1 — lihat modul VOICE_RTC di bawah.
+// ANTI-DELAY: chunk 1024 (21ms), 1 AudioContext (tanpa drift),
+// backlog >300ms dibuang + server relay volatile (paket basi dibuang,
+// bukan diantrekan). Mode WebRTC P2P (Opus, playoutDelayHint=0.05)
+// tersedia bila URL memakai ?webrtc=1 — lihat modul VOICE_RTC di bawah.
 // =============================================================
 // PRD v1.0 §6.3 — konfigurasi voice terpusat
 const VOICE_CONFIG = {
@@ -6089,7 +6486,7 @@ const VOICE_CONFIG = {
   dtx: false,
   fec: true,
   playoutDelayHint: 0.05,          // 50 ms — jitter buffer WebRTC
-  jitterBufferSocket: 0.08,        // 80 ms — transport Socket.IO
+  jitterBufferSocket: 0.05,        // 50 ms — transport Socket.IO (dulu 80ms, delay terasa)
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' }
     // Tambah TURN cadangan via: VOICE_CONFIG.iceServers.push({urls:'turn:...',username:'u',credential:'p'})
@@ -6112,8 +6509,9 @@ const VOICE = {
   speakingLocal: false,
   lastVoiceTime: 0,
   sampleRate: 48000,
-  chunkSize: 2048,
+  chunkSize: 1024,                 // 21ms @48kHz (dulu 2048 = 42ms — separuh latency kirim)
   vadThreshold: 0.012,         // RMS minimum untuk dianggap suara
+  maxBacklog: 0.30,            // antrean playback >300ms = basi → buang, resync (anti delay menumpuk)
   jitterBuffer: VOICE_CONFIG.jitterBufferSocket,
   _cleanupTimer: null,
   _qTimer: null,
@@ -6137,8 +6535,10 @@ async function voiceStart(){
 
     const AC = window.AudioContext || window.webkitAudioContext;
 
-    // 2. Capture context
+    // 2. SATU context untuk capture + playback (dulu dua context beda rate →
+    // resample/drift + 2x resource). Sample rate capture == playback.
     VOICE.audioCtx = new AC();
+    try{if(VOICE.audioCtx.state==='suspended')VOICE.audioCtx.resume();}catch(e){}
     VOICE.sampleRate = VOICE.audioCtx.sampleRate;
     VOICE.micSource = VOICE.audioCtx.createMediaStreamSource(VOICE.micStream);
     VOICE.processor = VOICE.audioCtx.createScriptProcessor(VOICE.chunkSize, 1, 1);
@@ -6189,8 +6589,9 @@ async function voiceStart(){
     VOICE.processor.connect(VOICE.silentGain);
     VOICE.silentGain.connect(VOICE.audioCtx.destination);
 
-    // 3. Playback context + pipeline normalisasi (anti clipping)
-    VOICE.playbackCtx = new AC();
+    // 3. Playback memakai context YANG SAMA (tanpa resample/drift) +
+    // pipeline normalisasi (anti clipping)
+    VOICE.playbackCtx = VOICE.audioCtx;
     try{
       VOICE.comp = VOICE.playbackCtx.createDynamicsCompressor();
       VOICE.comp.threshold.value = -18;
@@ -6249,13 +6650,14 @@ function voiceStop(){
     VOICE.micStream.getTracks().forEach(function(t){ t.stop(); });
     VOICE.micStream = null;
   }
+  // audioCtx & playbackCtx BISA objek yang sama (hemat resource) → tutup sekali saja
+  if(VOICE.playbackCtx && VOICE.playbackCtx!==VOICE.audioCtx){
+    try{ VOICE.playbackCtx.close(); }catch(e){}
+  }
+  VOICE.playbackCtx = null;
   if(VOICE.audioCtx){
     try{ VOICE.audioCtx.close(); }catch(e){}
     VOICE.audioCtx = null;
-  }
-  if(VOICE.playbackCtx){
-    try{ VOICE.playbackCtx.close(); }catch(e){}
-    VOICE.playbackCtx = null;
   }
   VOICE.comp = null;
   VOICE.normGain = null;
@@ -6319,6 +6721,12 @@ function voicePlayChunk(peerId, arrayBuffer){
   if(state.time < now + 0.02){
     state.time = now + VOICE.jitterBuffer;
     VOICE.stat.underruns++;
+  }else if(state.time - now > VOICE.maxBacklog){
+    // ANTI-DELAY: antrean >300ms = suara basi (jaringan sempat macet) →
+    // buang tumpukan lama, lompat ke kini. Lebih baik putus 50ms
+    // daripada ngomong kedengeran 1 detik telat.
+    state.time = now + VOICE.jitterBuffer;
+    VOICE.stat.underruns++;
   }
   VOICE.stat.chunks++;
 
@@ -6344,6 +6752,10 @@ function voiceCleanupSpeaking(){
     if(VOICE.speakingPeers.has(peerId) && now - state.lastActivity > 350){
       VOICE.speakingPeers.delete(peerId);
       changed = true;
+    }
+    // Bebaskan memori peer yang diam >5 detik (state basi = sumber delay pas dia ngomong lagi)
+    if(now - state.lastActivity > 5000){
+      VOICE.playbackQueue.delete(peerId);
     }
   });
   if(VOICE.speakingLocal && now - VOICE.lastVoiceTime > 350){
@@ -6711,7 +7123,11 @@ document.addEventListener('keydown',function(e){
   }
   if(e.code==='KeyI'){toggleInventory();e.preventDefault();return;}
   if(e.code==='KeyH'){togglePanel();e.preventDefault();return;}
+  // Undo/redo ala Planner 2D — global (jalan walau katalog terbuka)
+  if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){e.preventDefault();e.shiftKey?redoDo():undoDo();return;}
+  if((e.ctrlKey||e.metaKey)&&e.code==='KeyY'){e.preventDefault();redoDo();return;}
   if(e.code==='Escape'){
+    if(RULER.on){rulerOff();e.preventDefault();return;}
     if(inventoryOpen){closeInventory();e.preventDefault();return;}
     if(panelOpen){closePanel();e.preventDefault();return;}
     if(stdEl.classList.contains('on')){closeStd();e.preventDefault();return;}
@@ -6721,6 +7137,9 @@ document.addEventListener('keydown',function(e){
   if(e.code==='KeyO'){setCamMode('orbit');e.preventDefault();return;}
   if(e.code==='KeyF'&&!PLACEMENT.active){setCamMode('fps');e.preventDefault();return;}
   if(e.code==='KeyT'&&!PLACEMENT.active){setCamMode('top');e.preventDefault();return;}
+  // Penggaris (M) + grid 2D (N) ala Planner
+  if(e.code==='KeyM'){rulerToggle();e.preventDefault();return;}
+  if(e.code==='KeyN'){gridToggle();e.preventDefault();return;}
   if(e.code==='KeyT'&&PLACEMENT.active){
     const mt=ITEM_MOUNT[PLACEMENT.item]||'floor';
     if(mt==='either')setSnap(PLACEMENT.snap==='floor'?'wall':'floor');
@@ -6744,12 +7163,14 @@ document.addEventListener('keydown',function(e){
   if(e.code==='BracketLeft'&&PLACEMENT.active){rotatePlacement(-Math.PI/12);e.preventDefault();}
   if(e.code==='BracketRight'&&PLACEMENT.active){rotatePlacement(Math.PI/12);e.preventDefault();}
   if(e.code==='KeyX'){
-    if(PLACEMENT.active)cancelPlacement();
+    if(RULER.on){rulerOff();}
+    else if(PLACEMENT.active)cancelPlacement();
     else removeSelectedOrCrosshair();
   }
   if(e.code==='Delete'||e.code==='Backspace'){
     if(selectedBody){
       if(mpBlockWatchTab()){e.preventDefault();return;}
+      undoPush();
       scene.remove(selectedBody.mesh);
       const i=PHYS.bodies.indexOf(selectedBody);if(i>=0)PHYS.bodies.splice(i,1);
       selectedBody=null;renderInspector();updateStats();
@@ -6760,6 +7181,7 @@ document.addEventListener('keydown',function(e){
   if(e.code==='KeyJ'){loadLayout();e.preventDefault();}
   if(e.code==='KeyR'){
     if(PLACEMENT.active)cancelPlacement();
+    undoPush();
     PHYS.clearAll();selectedBody=null;renderInspector();updateStats();
     showToast('Ruangan direset kosong');
   }
@@ -6801,6 +7223,11 @@ document.querySelectorAll('#snapBar button').forEach(function(btn){
 });
 
 document.getElementById('btnKatalog').addEventListener('click',openInventory);
+document.getElementById('btnRuler').addEventListener('click',function(e){e.stopPropagation();rulerToggle();});
+document.getElementById('btnDenah').addEventListener('click',function(e){e.stopPropagation();exportDenahPNG();});
+document.querySelectorAll('[data-tpl]').forEach(function(btn){
+  btn.addEventListener('click',function(e){e.stopPropagation();applyTemplate(btn.dataset.tpl);});
+});
 document.getElementById('btnCombat').addEventListener('click',function(e){e.stopPropagation();combatToggle();});
 document.getElementById('btnInfo').addEventListener('click',togglePanel);
 document.getElementById('btnSave').addEventListener('click',saveLayout);
@@ -6889,7 +7316,7 @@ const dlBtn=document.getElementById('btnDownload'); if(dlBtn) dlBtn.addEventList
 document.getElementById('btnLoad').addEventListener('click',loadLayout);
 document.getElementById('btnReset').addEventListener('click',function(){
   if(mpBlockWatchTab())return;
-  if(confirm('Reset seluruh ruangan?')){PHYS.clearAll();selectedBody=null;renderInspector();updateStats();}
+  if(confirm('Reset seluruh ruangan?')){undoPush();PHYS.clearAll();selectedBody=null;renderInspector();updateStats();}
 });
 document.getElementById('btnStd').addEventListener('click',openStd);
 document.getElementById('stdClose').addEventListener('click',closeStd);
@@ -6996,43 +7423,10 @@ function loadLayout(){
     const applyItems=function(items,tag){
       try{
       if(PLACEMENT.active)cancelPlacement();
+      undoPush();
       PHYS.clearAll();
-      for(let i=0;i<items.length;i++){
-        const it=items[i],def=MAKERS[it.itemKey];if(!def)continue;
-        const real=def.make();
-        real.position.set(it.pos.x,0,it.pos.z);   // abaikan pos.y dari save
-        real.rotation.set(0,it.rotY||0,0);scene.add(real);
-        const b=PHYS.add(real,{label:def.label,aabb:def.aabb,type:def.type,
-          itemKey:it.itemKey,rest:0.15,fric:0.85,
-          adhesive:it.stuckSurface||'floor'});
-        if(it.stuck&&it.stuckSurface==='wall'){
-        const halfSpan=Math.max(def.aabb.w,def.aabb.d)/2;
-        const ws=PHYS.findNearestWall(real.position,halfSpan);
-        const maxDist=def.aabb.d/2+0.35;
-        if(ws.wall && ws.dist<=maxDist){
-          const w=ws.wall;
-          if(w.axis==='x'){
-            real.position.x=w.val+(w.dir>0?-def.aabb.d/2-0.01:def.aabb.d/2+0.01);
-          }else{
-            real.position.z=w.val+(w.dir>0?-def.aabb.d/2-0.01:def.aabb.d/2+0.01);
-          }
-          const mountBottomY=(WALL_MOUNT[it.itemKey]!==undefined)?WALL_MOUNT[it.itemKey]:0;
-          real.position.y=mountBottomY;
-          real.rotation.set(0,ws.rotY,0);
-          b.stuck=true;b.stuckSurface='wall';
-        }else{
-          real.position.y=2.5;
-          b.stuck=false;b.stuckSurface=null;
-        }
-      }else if(it.stuck&&it.stuckSurface==='support'){
-        // alat di atas meja / rak lemari: hormati pos.y dari save
-        real.position.set(it.pos.x,it.pos.y||0,it.pos.z);
-        PHYS.stickSupport(b,it.pos.y||0);
-      }else{
-        real.position.y=0;
-        b.stuck=true;b.stuckSurface='floor';
-      }
-    }
+      // Satu-satunya builder snapshot (jangan duplikasi logika wall/support/floor di sini)
+      for(let i=0;i<items.length;i++){try{mpSpawnSnapshotItem(items[i]);}catch(e){}}
       updateStats();showToast('Dimuat ('+items.length+' item)'+(tag?' · '+tag:''));
       labipaCacheWrite(items);
       labipaMarkSceneReady(items);
@@ -7256,6 +7650,7 @@ function updateStats(){
 // MINIMAP
 // =============================================================
 const mmCanvas=document.getElementById('mmCanvas');
+const mmBox=document.getElementById('minimap');
 const mmCtx=mmCanvas.getContext('2d');
 const MW=mmCanvas.width,MH=mmCanvas.height;
 const wMinX=-10,wMaxX=9,wMinZ=-6,wMaxZ=12;
@@ -7345,6 +7740,8 @@ let fpsFrames=0,fpsLast=performance.now();
 const stampEl=document.getElementById('stampTime');
 const footEl=document.getElementById('footerTime');
 const topTimeEl=document.getElementById('topTime');
+const vPosEl=document.getElementById('vPos');
+const fpsEl=document.getElementById('fps');
 
 function animate(){
   requestAnimationFrame(animate);
@@ -7387,7 +7784,7 @@ function animate(){
     camera.rotation.y=yaw;camera.rotation.x=pitch;
     playerMesh.position.set(player.pos.x,player.pos.y-player.height,player.pos.z);
     playerMesh.visible=false;
-    document.getElementById('vPos').textContent=
+    if(vPosEl)vPosEl.textContent=
       player.pos.x.toFixed(1)+' / '+player.pos.z.toFixed(1);
   }else if(camMode==='orbit'){
     playerMesh.visible=false;
@@ -7407,7 +7804,7 @@ function animate(){
       orbit.target.z+orbit.r*sp2*Math.cos(orbit.theta)
     );
     camera.lookAt(orbit.target);
-    document.getElementById('vPos').textContent=
+    if(vPosEl)vPosEl.textContent=
       orbit.target.x.toFixed(1)+' / '+orbit.target.z.toFixed(1);
   }else{
     playerMesh.visible=false;
@@ -7423,21 +7820,22 @@ function animate(){
     orthoCam.position.set(topView.target.x,50,topView.target.z);
     orthoCam.up.set(0,0,-1);
     orthoCam.lookAt(topView.target.x,0,topView.target.z);
-    orthoCam.updateProjectionMatrix();
-    document.getElementById('vPos').textContent=
+    if(topProjDirty){orthoCam.updateProjectionMatrix();topProjDirty=false;}
+    if(vPosEl)vPosEl.textContent=
       topView.target.x.toFixed(1)+' / '+topView.target.z.toFixed(1);
   }
 
+  // Minimap disembunyikan (tanpa .on) → jangan redraw 24Hz sia-sia.
+  // Export PNG memanggil drawMM() sendiri saat dibutuhkan.
   mmTick+=dt;
-  if(mmTick>1/24){mmTick=0;drawMM();}
+  if(mmTick>0.5){mmTick=0;if(mmBox&&mmBox.classList.contains('on'))drawMM();}
 
   // Debu melayang pelan + FPS meter
   if(typeof dust!=='undefined'){dust.rotation.y+=dt*0.008;}
   fpsFrames++;
   const nowMs=performance.now();
   if(nowMs-fpsLast>1000){
-    const el=document.getElementById('fps');
-    if(el)el.textContent=Math.round(fpsFrames*1000/(nowMs-fpsLast))+' FPS';
+    if(fpsEl)fpsEl.textContent=Math.round(fpsFrames*1000/(nowMs-fpsLast))+' FPS';
     fpsFrames=0;fpsLast=nowMs;
   }
 
@@ -7649,6 +8047,7 @@ function onResize(){
     const viewW=viewH*aspect;
     orthoCam.left=-viewW/2;orthoCam.right=viewW/2;
     orthoCam.top=viewH/2;orthoCam.bottom=-viewH/2;
+    if(typeof topProjDirty!=='undefined')topProjDirty=true;
   }catch(e){}
   orthoCam.updateProjectionMatrix();
   renderer.setSize(w,h,false);

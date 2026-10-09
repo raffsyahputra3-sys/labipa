@@ -32,10 +32,11 @@ Aplikasi lab IPA 3D multiplayer (Three.js r128 + Socket.IO). Repo: `labipa`
 ## Arsitektur server (`server.js` — monolit, CommonJS)
 - `MP_COLORS` 12 warna · `sanitizeName/uniqueName/sanitizeAvatar`
 - Socket: `room:create/join` (kode 6-char ATAU kode kelas s/d 24 char),
-  `room:lock`, `participant:role` (host-only), `presence:update` (+alias
-  `player:move`), `world:update` (+alias), `voice:start/stop/data`,
-  relay `voice:offer/answer/ice`, `peer:join/leave/presence`, alias
-  `player:join/leave`, `room:host`, `room:state`, `world:denied`
+  `room:lock`, `participant:role` (host-only), `presence:update`,
+  `world:update`, `voice:start/stop/data`,
+  relay `voice:offer/answer/ice`, `peer:join/leave/presence`,
+  `room:host`, `room:state`, `world:denied` (alias `player:join/leave/move`
+  dihapus — duplikat traffic presence 20Hz)
 - Presence punya `role`: host/editor/viewer. Viewer & dunia read-only/
   archived → `world:update` ditolak (`world:denied`).
 - Keanggotaan room HANYA lewat `joinRoom()`/`leaveRoom()` (dipakai juga oleh
